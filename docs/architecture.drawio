@@ -1,0 +1,1264 @@
+<mxfile host="65bd71144e">
+    <diagram id="variants" name="1. Варианты">
+        <mxGraphModel dx="1620" dy="1951" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1680" pageHeight="980" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="variants-1" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=18;" value="&lt;b&gt;Варианты архитектуры&lt;/b&gt;: сравнение по требованиям хакатона и масштабируемости (схемы упрощены)" vertex="1">
+                    <mxGeometry height="40" width="1580" x="40" y="15" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;arcSize=8;fillColor=#ffffff;strokeColor=#333333;" value="&lt;b&gt;1. Только чат-бот&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="300" x="40" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=0;fontSize=10;arcSize=3;fillColor=#fafafa;strokeColor=#dddddd;align=left;spacingLeft=6;fontColor=#999999;" value="Схема" vertex="1">
+                    <mxGeometry height="280" width="300" x="40" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-4" parent="variants-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Пользователь MAX" vertex="1">
+                    <mxGeometry height="32" width="200" x="50" y="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-5" parent="variants-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="Чат с ботом" vertex="1">
+                    <mxGeometry height="32" width="200" x="50" y="73" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-6" parent="variants-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="MAX Bot API" vertex="1">
+                    <mxGeometry height="32" width="200" x="50" y="121" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-7" parent="variants-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Бэкенд бота" vertex="1">
+                    <mxGeometry height="32" width="200" x="50" y="169" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-8" parent="variants-3" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД" vertex="1">
+                    <mxGeometry height="50" width="100" x="100" y="217" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-9" edge="1" parent="1" source="variants-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-5" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-10" edge="1" parent="1" source="variants-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-6" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-11" edge="1" parent="1" source="variants-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-7" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-12" edge="1" parent="1" source="variants-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-13" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Плюсы&lt;/b&gt;&lt;br&gt;• проще и быстрее всего&lt;br&gt;• один канал, работает в мобильном и веб-MAX&lt;br&gt;• бот хорош для уведомлений и коротких действий" vertex="1">
+                    <mxGeometry height="170" width="300" x="40" y="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Минусы&lt;/b&gt;&lt;br&gt;• трекер по 60 квартирам, прогноз в м², документы в чате неудобны&lt;br&gt;• нет нормального кабинета УК&lt;br&gt;• слабый балл за UX/UI (20%)" vertex="1">
+                    <mxGeometry height="190" width="300" x="40" y="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-15" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#999999;fontStyle=2;" value="Не подходит как основа: сложные экраны в чат не помещаются" vertex="1">
+                    <mxGeometry height="60" width="300" x="40" y="810" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=3;" value="&lt;b&gt;2. Бот + мини-приложение над одним бэкендом&lt;br&gt;(модульный монолит + воркер)&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="300" x="360" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-17" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=0;fontSize=10;arcSize=3;fillColor=#fafafa;strokeColor=#dddddd;align=left;spacingLeft=6;fontColor=#999999;" value="Схема" vertex="1">
+                    <mxGeometry height="280" width="300" x="360" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-18" parent="variants-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="Клиент MAX&lt;br&gt;чат + мини-приложение" vertex="1">
+                    <mxGeometry height="44" width="220" x="40" y="25" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-19" parent="variants-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="MAX Bot API" vertex="1">
+                    <mxGeometry height="32" width="120" x="10" y="92" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-20" parent="variants-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Бэкенд (Go)&lt;/b&gt;&lt;br&gt;бот + API · ядро · воркер" vertex="1">
+                    <mxGeometry height="50" width="220" x="40" y="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-21" parent="variants-17" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="PostgreSQL" vertex="1">
+                    <mxGeometry height="50" width="140" x="80" y="218" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-22" edge="1" parent="1" source="variants-18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.2;exitY=1;entryX=0.5;entryY=0;" target="variants-19" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-23" edge="1" parent="1" source="variants-19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.2;entryY=0;" target="variants-20" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-24" edge="1" parent="1" source="variants-18" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.8;exitY=1;entryX=0.8;entryY=0;" target="variants-20" value="HTTPS">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-25" edge="1" parent="1" source="variants-20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-21" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-26" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Плюсы&lt;/b&gt;&lt;br&gt;• быстро разрабатывать и отлаживать&lt;br&gt;• одна база: точный транзакционный подсчёт голосов&lt;br&gt;• одна команда docker compose, быстрая сборка&lt;br&gt;• соответствует масштабу MVP (критерий оценки)&lt;br&gt;• модули и воркер можно вынести позже без переписывания" vertex="1">
+                    <mxGeometry height="170" width="300" x="360" y="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-27" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Минусы&lt;/b&gt;&lt;br&gt;• одна точка отказа (решается несколькими копиями)&lt;br&gt;• нужна дисциплина границ между модулями&lt;br&gt;• бот через long polling — одна копия; для роста нужен webhook" vertex="1">
+                    <mxGeometry height="190" width="300" x="360" y="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-28" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#82b366;strokeColor=#82b366;fontColor=#ffffff;fontStyle=1;" value="✅ Рекомендуем: MVP и пилот, дальше растёт без переписывания" vertex="1">
+                    <mxGeometry height="60" width="300" x="360" y="810" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-29" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;arcSize=8;fillColor=#ffffff;strokeColor=#333333;" value="&lt;b&gt;3. Микросервисы&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="300" x="680" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-30" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=0;fontSize=10;arcSize=3;fillColor=#fafafa;strokeColor=#dddddd;align=left;spacingLeft=6;fontColor=#999999;" value="Схема" vertex="1">
+                    <mxGeometry height="280" width="300" x="680" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-31" parent="variants-30" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="Клиент MAX" vertex="1">
+                    <mxGeometry height="28" width="200" x="50" y="23" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-32" parent="variants-30" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="API-шлюз" vertex="1">
+                    <mxGeometry height="28" width="200" x="50" y="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-33" parent="variants-30" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Сервис бота" vertex="1">
+                    <mxGeometry height="28" width="135" x="10" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-34" parent="variants-30" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Сервис инициатив" vertex="1">
+                    <mxGeometry height="28" width="135" x="155" y="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-35" parent="variants-30" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Сервис уведомлений" vertex="1">
+                    <mxGeometry height="28" width="135" x="10" y="148" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-36" parent="variants-30" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Сервис документов" vertex="1">
+                    <mxGeometry height="28" width="135" x="155" y="148" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-37" parent="variants-30" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#ffe6cc;strokeColor=#d79b00;" value="Брокер сообщений" vertex="1">
+                    <mxGeometry height="26" width="280" x="10" y="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-38" parent="variants-30" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="Своя БД у каждого сервиса" vertex="1">
+                    <mxGeometry height="45" width="180" x="60" y="225" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-39" edge="1" parent="1" source="variants-31" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-32" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-40" edge="1" parent="1" source="variants-32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" target="variants-33" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-41" edge="1" parent="1" source="variants-32" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" target="variants-34" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-42" edge="1" parent="1" source="variants-35" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.25;entryY=0;" target="variants-37" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-43" edge="1" parent="1" source="variants-36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" target="variants-37" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-44" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Плюсы&lt;/b&gt;&lt;br&gt;• независимое масштабирование и деплой&lt;br&gt;• сбой одного сервиса не роняет остальные&lt;br&gt;• удобно большим командам" vertex="1">
+                    <mxGeometry height="170" width="300" x="680" y="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-45" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Минусы&lt;/b&gt;&lt;br&gt;• избыточно для хакатона и MVP&lt;br&gt;• распределённые данные усложняют точный подсчёт голосов&lt;br&gt;• больше инфраструктуры, сборка дольше 5 минут&lt;br&gt;• жюри труднее запустить и проверить&lt;br&gt;• «не соответствует масштабу MVP»" vertex="1">
+                    <mxGeometry height="190" width="300" x="680" y="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-46" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#999999;fontStyle=2;" value="Не сейчас: возможный путь роста при большой нагрузке" vertex="1">
+                    <mxGeometry height="60" width="300" x="680" y="810" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-47" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;arcSize=8;fillColor=#ffffff;strokeColor=#333333;" value="&lt;b&gt;4. Serverless (облачные функции)&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="300" x="1000" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-48" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=0;fontSize=10;arcSize=3;fillColor=#fafafa;strokeColor=#dddddd;align=left;spacingLeft=6;fontColor=#999999;" value="Схема" vertex="1">
+                    <mxGeometry height="280" width="300" x="1000" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-49" parent="variants-48" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="Клиент MAX" vertex="1">
+                    <mxGeometry height="30" width="200" x="50" y="23" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-50" parent="variants-48" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=0;fontSize=10;arcSize=3;fillColor=#f5f5f5;strokeColor=#999999;dashed=1;" value="Облако провайдера" vertex="1">
+                    <mxGeometry height="200" width="280" x="10" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-51" parent="variants-50" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Функция: бот" vertex="1">
+                    <mxGeometry height="30" width="125" x="10" y="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-52" parent="variants-50" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Функция: API" vertex="1">
+                    <mxGeometry height="30" width="125" x="145" y="28" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-53" parent="variants-50" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Функция по расписанию: напоминания" vertex="1">
+                    <mxGeometry height="30" width="260" x="10" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-54" parent="variants-50" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="Облачная БД" vertex="1">
+                    <mxGeometry height="60" width="160" x="60" y="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-55" edge="1" parent="1" source="variants-49" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" target="variants-51" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-56" edge="1" parent="1" source="variants-49" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" target="variants-52" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-57" edge="1" parent="1" source="variants-53" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-54" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-58" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Плюсы&lt;/b&gt;&lt;br&gt;• не нужно администрировать серверы&lt;br&gt;• автоматическое масштабирование&lt;br&gt;• оплата за вызовы" vertex="1">
+                    <mxGeometry height="170" width="300" x="1000" y="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-59" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Минусы&lt;/b&gt;&lt;br&gt;• противоречит требованию запуска через docker compose&lt;br&gt;• привязка к облачному провайдеру&lt;br&gt;• холодный старт замедляет ответы бота&lt;br&gt;• сложнее фоновые задачи и сроки" vertex="1">
+                    <mxGeometry height="190" width="300" x="1000" y="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-60" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#999999;fontStyle=2;" value="Не подходит: нарушает требования к сдаче" vertex="1">
+                    <mxGeometry height="60" width="300" x="1000" y="810" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-61" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=13;arcSize=8;fillColor=#ffffff;strokeColor=#333333;" value="&lt;b&gt;5. Конструктор ботов MAX + мини-приложение&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="300" x="1320" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-62" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=0;fontSize=10;arcSize=3;fillColor=#fafafa;strokeColor=#dddddd;align=left;spacingLeft=6;fontColor=#999999;" value="Схема" vertex="1">
+                    <mxGeometry height="280" width="300" x="1320" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-63" parent="variants-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="Клиент MAX" vertex="1">
+                    <mxGeometry height="30" width="200" x="50" y="23" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-64" parent="variants-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="Конструктор сценариев MAX (без кода)" vertex="1">
+                    <mxGeometry height="44" width="130" x="10" y="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-65" parent="variants-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Мини-приложение" vertex="1">
+                    <mxGeometry height="44" width="130" x="160" y="75" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-66" parent="variants-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Простой бэкенд" vertex="1">
+                    <mxGeometry height="34" width="130" x="160" y="145" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-67" parent="variants-62" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД" vertex="1">
+                    <mxGeometry height="50" width="100" x="175" y="205" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-68" parent="variants-62" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontColor=#b85450;" value="&lt;i&gt;логика разделена между конструктором и бэкендом&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="60" width="135" x="10" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-69" edge="1" parent="1" source="variants-63" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.5;entryY=0;" target="variants-64" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-70" edge="1" parent="1" source="variants-63" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.5;entryY=0;" target="variants-65" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-71" edge="1" parent="1" source="variants-65" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-66" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-72" edge="1" parent="1" source="variants-66" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="variants-67" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-73" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Плюсы&lt;/b&gt;&lt;br&gt;• бот без программирования за часы&lt;br&gt;• легко менять тексты сценариев" vertex="1">
+                    <mxGeometry height="170" width="300" x="1320" y="430" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-74" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Минусы&lt;/b&gt;&lt;br&gt;• пороги, роли, стадии и сроки не выражаются&lt;br&gt;• логика размазана между конструктором и бэкендом&lt;br&gt;• нет воспроизводимого запуска в Docker&lt;br&gt;• слабая техническая оценка" vertex="1">
+                    <mxGeometry height="190" width="300" x="1320" y="610" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-75" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#999999;fontStyle=2;" value="Не подходит: логика продукта сложнее конструктора" vertex="1">
+                    <mxGeometry height="60" width="300" x="1320" y="810" as="geometry"/>
+                </mxCell>
+                <mxCell id="variants-76" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;align=left;spacingLeft=10;" value="&lt;b&gt;Критерии выбора:&lt;/b&gt; запуск всех компонентов одной командой в Docker (сборка ≤ 5 мин) · MAX как среда реализации (мобильный и веб) · точный подсчёт голосов по м² · соответствие масштабу MVP · понятный путь масштабирования на другие УК и регионы" vertex="1">
+                    <mxGeometry height="50" width="1580" x="40" y="890" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="components" name="2. Компоненты">
+        <mxGraphModel dx="1620" dy="1951" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1680" pageHeight="1140" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="components-1" parent="1" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=14;" value="&lt;b&gt;Рекомендуемый вариант&lt;/b&gt;&lt;br&gt;модульный монолит + воркер" vertex="1">
+                    <mxGeometry height="50" width="300" x="40" y="20" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-2" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Инициатор" vertex="1">
+                    <mxGeometry height="50" width="150" x="380" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-3" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Собственник" vertex="1">
+                    <mxGeometry height="50" width="150" x="550" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-4" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Активист подъезда" vertex="1">
+                    <mxGeometry height="50" width="150" x="720" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-5" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Сотрудник УК" vertex="1">
+                    <mxGeometry height="50" width="150" x="890" y="30" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-6" parent="1" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=1;fontSize=12;arcSize=3;fillColor=#fffbea;strokeColor=#d6b656;" value="Клиент MAX (мобильный и веб)" vertex="1">
+                    <mxGeometry height="130" width="760" x="330" y="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-7" parent="components-6" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Чат с ботом&lt;/b&gt;&lt;br&gt;уведомления, кнопки опроса,&lt;br&gt;«поделиться номером», статусы" vertex="1">
+                    <mxGeometry height="70" width="300" x="30" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-8" parent="components-6" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Мини-приложение&lt;/b&gt; (React + MAX UI + MAX Bridge)&lt;br&gt;шаблон, прогноз в м², трекер,&lt;br&gt;документы, кабинет УК" vertex="1">
+                    <mxGeometry height="70" width="300" x="430" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-9" edge="1" parent="1" source="components-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.16447368421052633;entryY=0;" target="components-6" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-10" edge="1" parent="1" source="components-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.3881578947368421;entryY=0;" target="components-6" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-11" edge="1" parent="1" source="components-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.6118421052631579;entryY=0;" target="components-6" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-12" edge="1" parent="1" source="components-5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.8355263157894737;entryY=0;" target="components-6" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;MAX Bot API&lt;/b&gt;&lt;br&gt;platform-api.max.ru" vertex="1">
+                    <mxGeometry height="70" width="220" x="40" y="320" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-14" parent="1" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=1;fontSize=12;arcSize=3;fillColor=#f5faff;strokeColor=#6c8ebf;dashed=1;" value="Наш бэкенд (Go) — модульный монолит" vertex="1">
+                    <mxGeometry height="560" width="820" x="300" y="300" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-15" parent="components-14" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Интерактивный режим&lt;/b&gt;&lt;br&gt;бот (обработка событий) + HTTP API мини-приложения&lt;br&gt;проверка подписи initData, права по роли" vertex="1">
+                    <mxGeometry height="80" width="340" x="40" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-16" parent="components-14" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Воркер&lt;/b&gt;&lt;br&gt;массовые рассылки, напоминания по срокам,&lt;br&gt;генерация PDF" vertex="1">
+                    <mxGeometry height="80" width="340" x="440" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-17" parent="components-14" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=1;fontSize=12;arcSize=3;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Доменное ядро — вся бизнес-логика" vertex="1">
+                    <mxGeometry height="230" width="740" x="40" y="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-18" parent="components-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="Дома и реестр собственников" vertex="1">
+                    <mxGeometry height="70" width="225" x="20" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-19" parent="components-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="Подтверждение собственников и роли" vertex="1">
+                    <mxGeometry height="70" width="225" x="257" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-20" parent="components-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="Инициативы: шаблоны и стадии" vertex="1">
+                    <mxGeometry height="70" width="225" x="494" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-21" parent="components-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="Опрос поддержки (только собственники)" vertex="1">
+                    <mxGeometry height="70" width="225" x="20" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-22" parent="components-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="Трекер официального голосования" vertex="1">
+                    <mxGeometry height="70" width="225" x="257" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-23" parent="components-17" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="Подсчёт: кворум, 2/3, итоги" vertex="1">
+                    <mxGeometry height="70" width="225" x="494" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-24" parent="components-14" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Адаптеры интеграций&lt;/b&gt;&lt;br&gt;единый вход к внешним системам&lt;br&gt;в MVP — модельные реализации" vertex="1">
+                    <mxGeometry height="70" width="360" x="420" y="450" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-25" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;PostgreSQL&lt;/b&gt;&lt;br&gt;данные + очередь задач" vertex="1">
+                    <mxGeometry height="110" width="300" x="380" y="920" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-26" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontColor=#333333;" value="&lt;b&gt;Госуслуги.Дом / ГИС ЖКХ&lt;/b&gt;&lt;br&gt;законное голосование ОСС&lt;br&gt;&lt;i&gt;в MVP: только переход по ссылке&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="90" width="300" x="1200" y="330" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-27" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontColor=#333333;" value="&lt;b&gt;Данные УК&lt;/b&gt;&lt;br&gt;реестр собственников, биллинг&lt;br&gt;&lt;i&gt;в MVP: модельные&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="90" width="300" x="1200" y="560" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-28" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontColor=#333333;" value="&lt;b&gt;Открытые данные&lt;/b&gt;&lt;br&gt;паспорт дома (ГИС ЖКХ / Реформа ЖКХ)" vertex="1">
+                    <mxGeometry height="80" width="300" x="1200" y="740" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-29" edge="1" parent="1" source="components-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0.5;entryY=0;startArrow=block;startFill=1;" target="components-13" value="② сообщения и нажатия кнопок">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-30" edge="1" parent="1" source="components-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.7;entryX=0;entryY=0.25;" target="components-15" value="③ события: /start, нажатия">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-31" edge="1" parent="1" source="components-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=1;entryY=0.214;" target="components-13" value="④ рассылки и напоминания">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="910" y="335"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="components-32" edge="1" parent="1" source="components-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.75;entryY=0;" target="components-15" value="① HTTPS + initData (подпись MAX)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-33" edge="1" parent="1" source="components-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="components-16" value="⑤ задачи">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-34" edge="1" parent="1" source="components-15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.2297;entryY=0;" target="components-17" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-35" edge="1" parent="1" source="components-16" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.7703;entryY=0;" target="components-17" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-36" edge="1" parent="1" source="components-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=1;entryX=0.4833;entryY=0;" target="components-25" value="⑦ чтение и запись в транзакциях; очередь задач">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-37" edge="1" parent="1" source="components-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.75;exitY=1;entryX=0.486;entryY=0;" target="components-24" value="⑥">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-38" edge="1" parent="1" source="components-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.2;entryX=0;entryY=0.5;dashed=1;" target="components-26" value="в будущем: статус и итоги собрания">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1110" y="764"/>
+                            <mxPoint x="1110" y="375"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="components-39" edge="1" parent="1" source="components-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="components-27" value="⑧ реестр, проверка ЛС + суммы">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1160" y="785"/>
+                            <mxPoint x="1160" y="605"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="components-40" edge="1" parent="1" source="components-24" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.8;entryX=0;entryY=0.8;" target="components-28" value="паспорт дома">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-41" edge="1" parent="1" source="components-8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0.5;entryY=0;dashed=1;" target="components-26" value="⑨ переход в Госуслуги.Дом для законного голосования">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-42" parent="1" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=11;" value="&lt;b&gt;Легенда&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="24" width="220" x="40" y="600" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-43" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="наш компонент" vertex="1">
+                    <mxGeometry height="30" width="220" x="40" y="630" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-44" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="платформа MAX" vertex="1">
+                    <mxGeometry height="30" width="220" x="40" y="670" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-45" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontColor=#333333;" value="внешняя система (в MVP — модельно или ссылка)" vertex="1">
+                    <mxGeometry height="40" width="220" x="40" y="710" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-46" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fontSize=10;arcSize=8;fillColor=#e1d5e7;strokeColor=#9673a6;" value="пользователи" vertex="1">
+                    <mxGeometry height="30" width="220" x="40" y="760" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-47" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="данные" vertex="1">
+                    <mxGeometry height="50" width="120" x="90" y="800" as="geometry"/>
+                </mxCell>
+                <mxCell id="components-48" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" value="&lt;b&gt;Принципы&lt;/b&gt;&lt;br&gt;• бот и мини-приложение — два интерфейса к одному ядру&lt;br&gt;• состояние только в PostgreSQL, клиенты его не хранят&lt;br&gt;• внешние системы — только через адаптеры&lt;br&gt;&lt;br&gt;&lt;b&gt;Рост&lt;/b&gt;&lt;br&gt;• несколько копий интерактивного режима (бот через webhook)&lt;br&gt;• несколько воркеров на общей очереди&lt;br&gt;• реплики PostgreSQL на чтение&lt;br&gt;• первым в отдельный сервис выносится воркер&lt;br&gt;• новый регион или УК = новый адаптер и шаблоны, ядро то же" vertex="1">
+                    <mxGeometry height="230" width="440" x="1200" y="880" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-poll" name="3. Сценарий: опрос">
+        <mxGraphModel dx="1325" dy="1596" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1480" pageHeight="1020" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq-poll-1" parent="1" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=16;" value="&lt;b&gt;Сценарий: опрос поддержки&lt;/b&gt; (без юридической силы)" vertex="1">
+                    <mxGeometry height="30" width="900" x="40" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-2" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Инициатор&lt;br&gt;(мини-приложение)" vertex="1">
+                    <mxGeometry height="860" width="160" x="40" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-3" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Бэкенд:&lt;br&gt;бот + API" vertex="1">
+                    <mxGeometry height="860" width="160" x="230" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-4" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Доменное ядро" vertex="1">
+                    <mxGeometry height="860" width="160" x="420" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-5" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" value="PostgreSQL" vertex="1">
+                    <mxGeometry height="860" width="160" x="610" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-6" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Воркер" vertex="1">
+                    <mxGeometry height="860" width="160" x="800" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-7" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#fff2cc;strokeColor=#d6b656;" value="MAX Bot API" vertex="1">
+                    <mxGeometry height="860" width="160" x="990" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-8" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Собственник&lt;br&gt;(чат MAX)" vertex="1">
+                    <mxGeometry height="860" width="160" x="1180" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-poll-9" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="1. Запустить опрос (initData)">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="120" y="150" as="sourcePoint"/>
+                        <mxPoint x="310" y="150" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-10" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="2. Инициатор подтверждён? Создать опрос">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="310" y="205" as="sourcePoint"/>
+                        <mxPoint x="500" y="205" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-11" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="3. Опрос + задачи рассылки (одна транзакция)">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="500" y="260" as="sourcePoint"/>
+                        <mxPoint x="690" y="260" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-12" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="4. Взять задачи из очереди">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="880" y="315" as="sourcePoint"/>
+                        <mxPoint x="690" y="315" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-13" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="5. Сообщение с кнопками">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="880" y="370" as="sourcePoint"/>
+                        <mxPoint x="1070" y="370" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-14" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="6. «Поддерживаю / Против / Есть вопрос»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="1070" y="425" as="sourcePoint"/>
+                        <mxPoint x="1260" y="425" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-15" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="7. Нажал «Поддерживаю»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="1260" y="480" as="sourcePoint"/>
+                        <mxPoint x="1070" y="480" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-16" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="8. Событие нажатия (long polling)">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="1070" y="535" as="sourcePoint"/>
+                        <mxPoint x="310" y="535" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-17" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="9. Собственник подтверждён? Записать голос">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="310" y="590" as="sourcePoint"/>
+                        <mxPoint x="500" y="590" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-18" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="10. Голос: м² = площадь × доля">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="500" y="645" as="sourcePoint"/>
+                        <mxPoint x="690" y="645" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-19" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;" value="11. Ответ «Голос учтён»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="310" y="700" as="sourcePoint"/>
+                        <mxPoint x="1070" y="700" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-20" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="12. Открыть дашборд">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="120" y="755" as="sourcePoint"/>
+                        <mxPoint x="310" y="755" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-21" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;" value="13. Поддержка 1 240 м² из 3 000 (41%), до 2/3 не хватает 760 м²">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="310" y="810" as="sourcePoint"/>
+                        <mxPoint x="120" y="810" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-poll-22" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" value="Если кнопку нажал не подтверждённый собственник, голос &lt;b&gt;не записывается&lt;/b&gt;: бот отвечает «Голосуют только собственники» и предлагает переслать инициативу собственнику." vertex="1">
+                    <mxGeometry height="50" width="1300" x="40" y="935" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="seq-onboarding" name="4. Сценарий: вход и подтверждение">
+        <mxGraphModel dx="1325" dy="1596" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1320" pageHeight="1180" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="seq-onboarding-1" parent="1" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=16;" value="&lt;b&gt;Сценарий: вход в дом и подтверждение собственника&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="30" width="900" x="40" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-2" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Житель&lt;br&gt;(клиент MAX)" vertex="1">
+                    <mxGeometry height="1040" width="160" x="40" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-3" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Бэкенд:&lt;br&gt;бот + API" vertex="1">
+                    <mxGeometry height="1040" width="160" x="250" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-4" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Доменное ядро" vertex="1">
+                    <mxGeometry height="1040" width="160" x="460" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-5" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;" value="Адаптер данных УК&lt;br&gt;(в MVP модельный)" vertex="1">
+                    <mxGeometry height="1040" width="160" x="670" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-6" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" value="PostgreSQL" vertex="1">
+                    <mxGeometry height="1040" width="160" x="880" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-7" parent="1" style="shape=umlLifeline;perimeter=lifelinePerimeter;whiteSpace=wrap;html=1;container=0;collapsible=0;recursiveResize=0;outlineConnect=0;size=50;fontSize=11;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Сотрудник УК&lt;br&gt;(кабинет в мини-приложении)" vertex="1">
+                    <mxGeometry height="1040" width="160" x="1090" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-8" parent="1" style="shape=umlFrame;whiteSpace=wrap;html=1;width=190;height=26;fillColor=none;fontSize=11;fontStyle=1;" value="alt: номер совпал с реестром" vertex="1">
+                    <mxGeometry height="100" width="1260" x="20" y="480" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-9" parent="1" style="shape=umlFrame;whiteSpace=wrap;html=1;width=190;height=26;fillColor=none;fontSize=11;fontStyle=1;" value="else: номер не совпал" vertex="1">
+                    <mxGeometry height="480" width="1260" x="20" y="595" as="geometry"/>
+                </mxCell>
+                <mxCell id="seq-onboarding-10" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="1. Открыл ссылку дома (startapp=house_12) + initData">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="120" y="150" as="sourcePoint"/>
+                        <mxPoint x="330" y="150" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-11" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="2. Подпись MAX верна → найти пользователя и дом">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="330" y="195" as="sourcePoint"/>
+                        <mxPoint x="540" y="195" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-12" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="3. Пользователь + дом, роль «Гость»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="540" y="240" as="sourcePoint"/>
+                        <mxPoint x="960" y="240" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-13" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;" value="4. Выберите квартиру">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="330" y="285" as="sourcePoint"/>
+                        <mxPoint x="120" y="285" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-14" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="5. Кв. 45 + «Поделиться номером»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="120" y="330" as="sourcePoint"/>
+                        <mxPoint x="330" y="330" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-15" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="6. Сверить номер с реестром">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="330" y="375" as="sourcePoint"/>
+                        <mxPoint x="540" y="375" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-16" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="7. Есть ли этот номер у собственников кв. 45?">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="540" y="420" as="sourcePoint"/>
+                        <mxPoint x="750" y="420" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-17" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="8. Роль «Собственник»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="540" y="525" as="sourcePoint"/>
+                        <mxPoint x="960" y="525" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-18" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;" value="Вы собственник: кв. 45 · 26,15 м²">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="330" y="560" as="sourcePoint"/>
+                        <mxPoint x="120" y="560" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-19" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;" value="9. Введите лицевой счёт и сумму из квитанции">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="330" y="640" as="sourcePoint"/>
+                        <mxPoint x="120" y="640" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-20" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="10. Лицевой счёт + сумма">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="120" y="685" as="sourcePoint"/>
+                        <mxPoint x="330" y="685" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-21" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="11. Проверить квитанцию">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="330" y="730" as="sourcePoint"/>
+                        <mxPoint x="540" y="730" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-22" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="12. Лицевой счёт и сумма совпали?">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="540" y="775" as="sourcePoint"/>
+                        <mxPoint x="750" y="775" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-23" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="13. Роль «Житель»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="540" y="820" as="sourcePoint"/>
+                        <mxPoint x="960" y="820" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-24" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="14. «Я — Петрова А. В.» (выбор из списка собственников)">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="120" y="865" as="sourcePoint"/>
+                        <mxPoint x="330" y="865" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-25" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="15. Заявка на подтверждение собственника">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="540" y="910" as="sourcePoint"/>
+                        <mxPoint x="1170" y="910" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-26" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="16. Подтвердить (сверка с реестром)">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="1170" y="955" as="sourcePoint"/>
+                        <mxPoint x="540" y="955" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-27" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=block;endFill=1;fontSize=11;labelBackgroundColor=#ffffff;" value="17. Роль «Собственник»">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="540" y="1000" as="sourcePoint"/>
+                        <mxPoint x="960" y="1000" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="seq-onboarding-28" edge="1" parent="1" style="html=1;verticalAlign=bottom;endArrow=open;endFill=0;fontSize=11;labelBackgroundColor=#ffffff;dashed=1;" value="18. Вы собственник — открытые инициативы с кнопками">
+                    <mxGeometry relative="1" width="80" as="geometry">
+                        <mxPoint x="330" y="1045" as="sourcePoint"/>
+                        <mxPoint x="120" y="1045" as="targetPoint"/>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="mono-detail" name="5. Монолит подробно">
+        <mxGraphModel dx="1823" dy="2195" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1680" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="mono-detail-1" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=18;" value="&lt;b&gt;Модульный монолит — подробно&lt;/b&gt;: один сервис на Go, одна база PostgreSQL, модули с чёткими границами" vertex="1">
+                    <mxGeometry height="36" width="1720" x="40" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=14;" value="A. Модули внутри процесса: порты и адаптеры" vertex="1">
+                    <mxGeometry height="620" width="1720" x="40" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-3" parent="mono-detail-2" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=1;fontSize=12;arcSize=3;fillColor=#fffbea;strokeColor=#d6b656;" value="Входящие адаптеры&lt;br&gt;(откуда приходят вызовы)" vertex="1">
+                    <mxGeometry height="540" width="260" x="30" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-4" parent="mono-detail-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Обработчик событий бота&lt;/b&gt;&lt;br&gt;long polling / webhook MAX" vertex="1">
+                    <mxGeometry height="70" width="220" x="20" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-5" parent="mono-detail-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;HTTP API мини-приложения&lt;/b&gt;&lt;br&gt;проверка initData, роли" vertex="1">
+                    <mxGeometry height="70" width="220" x="20" y="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-6" parent="mono-detail-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Кабинет УК&lt;/b&gt;&lt;br&gt;тот же API, роль «УК»" vertex="1">
+                    <mxGeometry height="70" width="220" x="20" y="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-7" parent="mono-detail-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Планировщик сроков&lt;/b&gt;&lt;br&gt;раз в минуту: 10 / 45 дней, конец голосования" vertex="1">
+                    <mxGeometry height="70" width="220" x="20" y="330" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-8" parent="mono-detail-3" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Обработчик очереди&lt;/b&gt;&lt;br&gt;(воркер)" vertex="1">
+                    <mxGeometry height="70" width="220" x="20" y="420" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-9" parent="mono-detail-2" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=1;fontSize=12;arcSize=3;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Доменные модули — бизнес-логика&lt;br&gt;(не знают про MAX, HTTP и SQL)" vertex="1">
+                    <mxGeometry height="540" width="900" x="340" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-10" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Дома и реестр&lt;/b&gt;&lt;br&gt;&lt;i&gt;помещения, площади, доли,&lt;br&gt;загрузка реестра&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="30" y="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-11" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Подтверждение и роли&lt;/b&gt;&lt;br&gt;&lt;i&gt;гость / житель / собственник,&lt;br&gt;три пути подтверждения&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="330" y="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-12" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Правила ЖК&lt;/b&gt;&lt;br&gt;&lt;i&gt;пороги (10%, кворум, 2/3) и сроки&lt;br&gt;как данные шаблонов&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="630" y="65" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-13" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Опрос поддержки&lt;/b&gt;&lt;br&gt;&lt;i&gt;голосуют только собственники,&lt;br&gt;прогноз в м²&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="30" y="205" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-14" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Инициативы&lt;/b&gt;&lt;br&gt;&lt;i&gt;шаблоны, повестка,&lt;br&gt;стадии, сроки&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="330" y="205" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-15" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Уведомления&lt;/b&gt;&lt;br&gt;&lt;i&gt;что и кому отправить,&lt;br&gt;постановка в очередь&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="630" y="205" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-16" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Официальное голосование&lt;/b&gt;&lt;br&gt;&lt;i&gt;трекер бюллетеней,&lt;br&gt;список обхода&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="30" y="345" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-17" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Подсчёт&lt;/b&gt;&lt;br&gt;&lt;i&gt;кворум, большинство,&lt;br&gt;итоги по вопросам&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="330" y="345" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-18" parent="mono-detail-9" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#6c8ebf;" value="&lt;b&gt;Документы&lt;/b&gt;&lt;br&gt;&lt;i&gt;требование, сообщение,&lt;br&gt;бюллетени, протокол&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="110" width="270" x="630" y="345" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-24" parent="mono-detail-2" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;" value="&lt;i&gt;Правило: зависимости направлены внутрь; модуль читает чужие данные только через интерфейс модуля, а не из чужих таблиц.&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="24" width="900" x="340" y="592" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-25" parent="mono-detail-2" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=1;fontSize=12;arcSize=3;fillColor=#f5f5f5;strokeColor=#666666;" value="Исходящие адаптеры&lt;br&gt;(реализации интерфейсов)" vertex="1">
+                    <mxGeometry height="540" width="400" x="1290" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-26" parent="mono-detail-25" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Репозитории PostgreSQL&lt;/b&gt;&lt;br&gt;данные модулей + очередь задач" vertex="1">
+                    <mxGeometry height="70" width="360" x="20" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-27" parent="mono-detail-25" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Клиент MAX Bot API&lt;/b&gt;&lt;br&gt;отправка сообщений, учёт лимитов" vertex="1">
+                    <mxGeometry height="70" width="360" x="20" y="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-28" parent="mono-detail-25" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Генератор PDF + QR&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="70" width="360" x="20" y="240" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-29" parent="mono-detail-25" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontColor=#333333;" value="&lt;b&gt;Адаптер данных УК&lt;/b&gt;&lt;br&gt;реестр, биллинг · в MVP модельный" vertex="1">
+                    <mxGeometry height="70" width="360" x="20" y="330" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-30" parent="mono-detail-25" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontColor=#333333;" value="&lt;b&gt;Адаптер Госуслуги.Дом / ГИС ЖКХ&lt;/b&gt;&lt;br&gt;в MVP ссылка и модель" vertex="1">
+                    <mxGeometry height="70" width="360" x="20" y="420" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-19" edge="1" parent="1" source="mono-detail-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;fontSize=10;labelBackgroundColor=#ffffff;dashed=1;fontColor=#555555;" target="mono-detail-10" value="площадь × доля">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-20" edge="1" parent="1" source="mono-detail-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.2;entryX=0.2;entryY=1;dashed=1;fontColor=#555555;" target="mono-detail-11" value="собственник?">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-21" edge="1" parent="1" source="mono-detail-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.2;entryX=0.2;entryY=1;dashed=1;fontColor=#555555;" target="mono-detail-12" value="пороги и сроки">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-22" edge="1" parent="1" source="mono-detail-14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.7;entryX=0;entryY=0.7;dashed=1;fontColor=#555555;" target="mono-detail-15" value="поставить в очередь">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-23" edge="1" parent="1" source="mono-detail-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=open;endFill=0;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;dashed=1;fontColor=#555555;" target="mono-detail-16" value="бюллетени">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-31" edge="1" parent="1" source="mono-detail-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=3;" target="mono-detail-9" value="вызывают&lt;br&gt;сценарии">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-32" edge="1" parent="1" source="mono-detail-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;strokeWidth=3;" target="mono-detail-25" value="через&lt;br&gt;интерфейсы">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-33" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=14;" value="B. Развёртывание: docker compose" vertex="1">
+                    <mxGeometry height="450" width="840" x="40" y="720" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-34" parent="mono-detail-33" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Пользователи в MAX" vertex="1">
+                    <mxGeometry height="50" width="180" x="30" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-35" parent="mono-detail-33" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;MAX Bot API&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="180" x="30" y="290" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-36" parent="mono-detail-33" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;" value="&lt;i&gt;VPS в России + домен;&lt;br&gt;секреты только в .env&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="50" width="190" x="30" y="365" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-37" parent="mono-detail-33" style="rounded=1;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;verticalAlign=top;fontStyle=1;fontSize=12;arcSize=3;fillColor=#f5faff;strokeColor=#6c8ebf;" value="docker compose (один сервер)" vertex="1">
+                    <mxGeometry height="350" width="560" x="250" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-38" parent="mono-detail-37" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;web&lt;/b&gt;: Caddy&lt;br&gt;TLS-сертификат, статика мини-приложения,&lt;br&gt;/api → app · порты 80 / 443" vertex="1">
+                    <mxGeometry height="80" width="250" x="30" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-39" parent="mono-detail-37" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;app&lt;/b&gt; (роль: interactive)&lt;br&gt;бот + HTTP API · порт 8080&lt;br&gt;(только внутри сети)" vertex="1">
+                    <mxGeometry height="80" width="250" x="30" y="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-40" parent="mono-detail-37" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;worker&lt;/b&gt; (тот же образ,&lt;br&gt;роль: worker)&lt;br&gt;очередь, напоминания, PDF" vertex="1">
+                    <mxGeometry height="80" width="240" x="300" y="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-41" parent="mono-detail-37" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;postgres&lt;/b&gt;&lt;br&gt;том с данными" vertex="1">
+                    <mxGeometry height="75" width="200" x="180" y="265" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-42" edge="1" parent="1" source="mono-detail-34" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.25;" target="mono-detail-38" value="HTTPS">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-43" edge="1" parent="1" source="mono-detail-38" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="mono-detail-39" value="/api">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-44" edge="1" parent="1" source="mono-detail-39" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0.5;entryY=0;startArrow=block;startFill=1;" target="mono-detail-35" value="long polling событий">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-45" edge="1" parent="1" source="mono-detail-40" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.9;exitY=1;entryX=0.5;entryY=1;" target="mono-detail-35" value="отправка сообщений">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="806" y="1150"/>
+                            <mxPoint x="160" y="1150"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="mono-detail-46" edge="1" parent="1" source="mono-detail-39" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.6;exitY=1;entryX=0.3;entryY=0;" target="mono-detail-41" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-47" edge="1" parent="1" source="mono-detail-40" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.3;exitY=1;entryX=0.8;entryY=0;" target="mono-detail-41" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-48" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=14;" value="C. Очередь задач в PostgreSQL (outbox)" vertex="1">
+                    <mxGeometry height="450" width="840" x="920" y="720" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-49" parent="mono-detail-48" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Сценарий&lt;/b&gt; (например, запуск опроса)&lt;br&gt;одна транзакция:&lt;br&gt;изменение данных + запись задач" vertex="1">
+                    <mxGeometry height="100" width="250" x="30" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-50" parent="mono-detail-48" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;jobs&lt;/b&gt;&lt;br&gt;тип · данные · статус&lt;br&gt;попытки · run_at" vertex="1">
+                    <mxGeometry height="110" width="200" x="340" y="55" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-51" parent="mono-detail-48" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Воркер&lt;/b&gt;&lt;br&gt;берёт пачку задач:&lt;br&gt;FOR UPDATE SKIP LOCKED" vertex="1">
+                    <mxGeometry height="100" width="220" x="600" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-52" parent="mono-detail-48" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Выполнить: отправить в MAX,&lt;br&gt;сгенерировать PDF" vertex="1">
+                    <mxGeometry height="70" width="220" x="600" y="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-53" parent="mono-detail-48" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="Успех → status = done" vertex="1">
+                    <mxGeometry height="50" width="220" x="600" y="350" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-54" parent="mono-detail-48" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="Ошибка → повтор с паузой&lt;br&gt;(1 → 5 → 30 мин), затем failed" vertex="1">
+                    <mxGeometry height="70" width="220" x="340" y="340" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-55" parent="mono-detail-48" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" value="&lt;b&gt;Зачем&lt;/b&gt;&lt;br&gt;• рассылка не теряется при падении&lt;br&gt;• пользователь не ждёт отправки 60 сообщений&lt;br&gt;• соблюдаем лимиты MAX API&lt;br&gt;• несколько воркеров не возьмут одну задачу&lt;br&gt;• отдельный брокер не нужен: хватает PostgreSQL" vertex="1">
+                    <mxGeometry height="200" width="270" x="30" y="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-56" edge="1" parent="1" source="mono-detail-49" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="mono-detail-50" value="INSERT">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-57" edge="1" parent="1" source="mono-detail-51" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="mono-detail-50" value="SELECT … SKIP LOCKED">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-58" edge="1" parent="1" source="mono-detail-51" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="mono-detail-52" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-59" edge="1" parent="1" source="mono-detail-52" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="mono-detail-53" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-60" edge="1" parent="1" source="mono-detail-52" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" target="mono-detail-54" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-61" edge="1" parent="1" source="mono-detail-54" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.2;exitY=0;entryX=0.22;entryY=1;dashed=1;" target="mono-detail-50" value="run_at = позже">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-62" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=14;" value="D. Этапы роста без переписывания кода" vertex="1">
+                    <mxGeometry height="200" width="1720" x="40" y="1210" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-63" parent="mono-detail-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Этап 1 · MVP&lt;/b&gt;&lt;br&gt;один процесс (app + worker)&lt;br&gt;один PostgreSQL · long polling" vertex="1">
+                    <mxGeometry height="120" width="380" x="30" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-64" parent="mono-detail-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Этап 2 · пилот&lt;/b&gt;&lt;br&gt;app и worker — отдельные процессы&lt;br&gt;из одного образа" vertex="1">
+                    <mxGeometry height="120" width="380" x="450" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-65" parent="mono-detail-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Этап 3 · город или регион&lt;/b&gt;&lt;br&gt;N копий app за балансировщиком&lt;br&gt;бот через webhook · N воркеров&lt;br&gt;реплики PostgreSQL на чтение" vertex="1">
+                    <mxGeometry height="120" width="380" x="870" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-66" parent="mono-detail-62" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Этап 4 · по необходимости&lt;/b&gt;&lt;br&gt;вынести уведомления и интеграции&lt;br&gt;в отдельные сервисы (вкладка 6)" vertex="1">
+                    <mxGeometry height="120" width="380" x="1290" y="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-67" edge="1" parent="1" source="mono-detail-63" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="mono-detail-64" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-68" edge="1" parent="1" source="mono-detail-64" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="mono-detail-65" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-69" edge="1" parent="1" source="mono-detail-65" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="mono-detail-66" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-70" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Плюсы&lt;/b&gt;&lt;br&gt;• один репозиторий, один образ, одна база — быстро разрабатывать и отлаживать&lt;br&gt;• транзакции: голос, пересчёт прогноза и постановка уведомлений атомарны&lt;br&gt;• простой запуск для жюри: docker compose, 3–4 контейнера, быстрая сборка&lt;br&gt;• вызовы между модулями — обычные вызовы функций: быстро и с проверкой типов&lt;br&gt;• масштабируется копиями; для задач ЖКХ нагрузка невелика даже на регион&lt;br&gt;• модули с чёткими границами позже выносятся в сервисы без переписывания" vertex="1">
+                    <mxGeometry height="190" width="850" x="40" y="1450" as="geometry"/>
+                </mxCell>
+                <mxCell id="mono-detail-71" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Минусы&lt;/b&gt;&lt;br&gt;• общий релиз: изменение в одном модуле выкатывает всё приложение&lt;br&gt;• серьёзная ошибка может уронить весь процесс (смягчается разделением app и worker)&lt;br&gt;• без дисциплины модули начнут лезть в чужие таблицы — «большой ком грязи»&lt;br&gt;• масштабируются все модули вместе, даже если нагружен один&lt;br&gt;• одна технология и одна база на всё" vertex="1">
+                    <mxGeometry height="190" width="850" x="910" y="1450" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="micro-detail" name="6. Микросервисы подробно">
+        <mxGraphModel dx="1823" dy="2195" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1560" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="micro-detail-1" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=18;" value="&lt;b&gt;Микросервисы — подробно&lt;/b&gt;: отдельный сервис и отдельная база на каждую область, связь через брокер" vertex="1">
+                    <mxGeometry height="36" width="1720" x="40" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=14;" value="A. Сервисы и связи" vertex="1">
+                    <mxGeometry height="750" width="1720" x="40" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-3" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;MAX Bot API&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="60" width="200" x="40" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-4" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Клиент MAX&lt;/b&gt;: чат + мини-приложение" vertex="1">
+                    <mxGeometry height="50" width="400" x="660" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-5" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f5f5f5;strokeColor=#666666;dashed=1;fontColor=#333333;" value="&lt;b&gt;Госуслуги.Дом / ГИС ЖКХ / данные УК&lt;/b&gt;&lt;br&gt;&lt;i&gt;внешние системы&lt;/i&gt;" vertex="1">
+                    <mxGeometry height="60" width="320" x="1360" y="40" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-6" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Bot Gateway&lt;/b&gt;&lt;br&gt;приём событий MAX (webhook),&lt;br&gt;публикация в брокер" vertex="1">
+                    <mxGeometry height="70" width="300" x="40" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-7" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;API-шлюз / BFF&lt;/b&gt;&lt;br&gt;TLS, проверка initData,&lt;br&gt;маршрутизация запросов мини-приложения" vertex="1">
+                    <mxGeometry height="70" width="400" x="660" y="140" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-8" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffe6cc;strokeColor=#d79b00;" value="&lt;b&gt;Брокер сообщений&lt;/b&gt; (NATS / RabbitMQ / Kafka) · события: MembershipVerified · InitiativeCreated · PollStarted · VoteRequested · VoteCast · DeadlineReached · DocumentRequested" vertex="1">
+                    <mxGeometry height="60" width="1660" x="40" y="260" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-9" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Membership&lt;/b&gt;&lt;br&gt;пользователи,&lt;br&gt;подтверждение, роли" vertex="1">
+                    <mxGeometry height="90" width="190" x="40" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-10" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД membership" vertex="1">
+                    <mxGeometry height="60" width="150" x="60" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-13" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Registry&lt;/b&gt;&lt;br&gt;дома, помещения,&lt;br&gt;доли" vertex="1">
+                    <mxGeometry height="90" width="190" x="250" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-14" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД registry" vertex="1">
+                    <mxGeometry height="60" width="150" x="270" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-17" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Initiative&lt;/b&gt;&lt;br&gt;шаблоны, стадии,&lt;br&gt;прогноз" vertex="1">
+                    <mxGeometry height="90" width="190" x="460" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-18" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД initiatives" vertex="1">
+                    <mxGeometry height="60" width="150" x="480" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-21" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Voting&lt;/b&gt;&lt;br&gt;опрос, трекер,&lt;br&gt;подсчёт" vertex="1">
+                    <mxGeometry height="90" width="190" x="670" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-22" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД voting" vertex="1">
+                    <mxGeometry height="60" width="150" x="690" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-25" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Documents&lt;/b&gt;&lt;br&gt;PDF, бюллетени,&lt;br&gt;протокол" vertex="1">
+                    <mxGeometry height="90" width="190" x="880" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-26" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="Хранилище файлов (S3)" vertex="1">
+                    <mxGeometry height="60" width="150" x="900" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-29" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Notification&lt;/b&gt;&lt;br&gt;очередь отправки,&lt;br&gt;лимиты MAX" vertex="1">
+                    <mxGeometry height="90" width="190" x="1090" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-30" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД notification" vertex="1">
+                    <mxGeometry height="60" width="150" x="1110" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-33" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Scheduler&lt;/b&gt;&lt;br&gt;сроки 10 / 45 дней,&lt;br&gt;конец голосования" vertex="1">
+                    <mxGeometry height="90" width="190" x="1300" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-34" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="БД scheduler" vertex="1">
+                    <mxGeometry height="60" width="150" x="1320" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-37" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Integration&lt;/b&gt;&lt;br&gt;адаптеры внешних&lt;br&gt;систем" vertex="1">
+                    <mxGeometry height="90" width="190" x="1510" y="380" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-38" parent="micro-detail-2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fontSize=10;fillColor=#d5e8d4;strokeColor=#82b366;" value="Кэш данных УК" vertex="1">
+                    <mxGeometry height="60" width="150" x="1530" y="525" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-41" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;" value="&lt;b&gt;Оркестрация&lt;/b&gt;&lt;br&gt;Kubernetes или compose на 20+ контейнеров" vertex="1">
+                    <mxGeometry height="70" width="320" x="40" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-42" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;" value="&lt;b&gt;Наблюдаемость&lt;/b&gt;&lt;br&gt;трассировка, логи, метрики (OpenTelemetry)" vertex="1">
+                    <mxGeometry height="70" width="320" x="375" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-43" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;" value="&lt;b&gt;Контракты&lt;/b&gt;&lt;br&gt;OpenAPI / protobuf + схемы событий" vertex="1">
+                    <mxGeometry height="70" width="320" x="710" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-44" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;" value="&lt;b&gt;CI/CD&lt;/b&gt;&lt;br&gt;сборка и выкладка каждого сервиса" vertex="1">
+                    <mxGeometry height="70" width="320" x="1045" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-45" parent="micro-detail-2" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;" value="&lt;b&gt;Секреты и конфигурация&lt;/b&gt;&lt;br&gt;на каждый сервис" vertex="1">
+                    <mxGeometry height="70" width="320" x="1380" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-11" edge="1" parent="1" source="micro-detail-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.0286;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-12" edge="1" parent="1" source="micro-detail-9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-10" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-15" edge="1" parent="1" source="micro-detail-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.1551;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-16" edge="1" parent="1" source="micro-detail-13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-14" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-19" edge="1" parent="1" source="micro-detail-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.2816;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-20" edge="1" parent="1" source="micro-detail-17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-18" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-23" edge="1" parent="1" source="micro-detail-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.4081;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-24" edge="1" parent="1" source="micro-detail-21" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-22" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-27" edge="1" parent="1" source="micro-detail-25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.5346;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-28" edge="1" parent="1" source="micro-detail-25" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-26" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-31" edge="1" parent="1" source="micro-detail-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.6611;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-32" edge="1" parent="1" source="micro-detail-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-30" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-35" edge="1" parent="1" source="micro-detail-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.7877;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-36" edge="1" parent="1" source="micro-detail-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-34" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-39" edge="1" parent="1" source="micro-detail-37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.25;exitY=0;entryX=0.9142;entryY=1;startArrow=block;startFill=1;" target="micro-detail-8" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-40" edge="1" parent="1" source="micro-detail-37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-38" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-46" edge="1" parent="1" source="micro-detail-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0;exitY=0.5;entryX=1;entryY=0.5;startArrow=block;startFill=1;" target="micro-detail-3" value="чат">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-47" edge="1" parent="1" source="micro-detail-3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.3333;entryY=0;" target="micro-detail-6" value="webhook">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-48" edge="1" parent="1" source="micro-detail-6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.0904;entryY=0;" target="micro-detail-8" value="события чата">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-49" edge="1" parent="1" source="micro-detail-4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-7" value="HTTPS + initData">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-50" edge="1" parent="1" source="micro-detail-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.15;exitY=1;entryX=0.5;entryY=0;dashed=1;" target="micro-detail-17" value="синхронные вызовы (gRPC / REST)">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-51" edge="1" parent="1" source="micro-detail-7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.31;exitY=1;entryX=0.6;entryY=0;dashed=1;" target="micro-detail-21" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-52" edge="1" parent="1" source="micro-detail-29" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.95;exitY=1;entryX=0;entryY=0.5;" target="micro-detail-3" value="отправка сообщений">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1310" y="665"/>
+                            <mxPoint x="60" y="665"/>
+                            <mxPoint x="60" y="130"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="micro-detail-53" edge="1" parent="1" source="micro-detail-37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" target="micro-detail-5" value="HTTP / СМЭВ (после MVP)">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="1752" y="485"/>
+                            <mxPoint x="1752" y="130"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="micro-detail-54" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=14;" value="B. Как проходит один голос: цепочка событий" vertex="1">
+                    <mxGeometry height="330" width="1720" x="40" y="850" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-55" parent="micro-detail-54" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;1. Bot Gateway&lt;/b&gt;&lt;br&gt;получил нажатие «Поддерживаю»&lt;br&gt;→ публикует VoteRequested" vertex="1">
+                    <mxGeometry height="100" width="300" x="30" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-56" parent="micro-detail-54" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;2. Voting&lt;/b&gt;&lt;br&gt;«собственник?» — по локальной копии ролей&lt;br&gt;(собрана из событий MembershipVerified)" vertex="1">
+                    <mxGeometry height="100" width="300" x="370" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-57" parent="micro-detail-54" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;3. Voting&lt;/b&gt;&lt;br&gt;записывает голос в свою БД&lt;br&gt;→ публикует VoteCast" vertex="1">
+                    <mxGeometry height="100" width="300" x="710" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-58" parent="micro-detail-54" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;4. Initiative&lt;/b&gt;&lt;br&gt;получает VoteCast,&lt;br&gt;пересчитывает прогноз в м²" vertex="1">
+                    <mxGeometry height="100" width="300" x="1050" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-59" parent="micro-detail-54" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;5. Notification&lt;/b&gt;&lt;br&gt;тоже получает VoteCast,&lt;br&gt;отправляет «Голос учтён»" vertex="1">
+                    <mxGeometry height="100" width="300" x="1390" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-64" parent="micro-detail-54" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;Отставание копии ролей&lt;/b&gt;&lt;br&gt;подтверждение ещё не дошло →&lt;br&gt;голос отклонён или принят зря" vertex="1">
+                    <mxGeometry height="90" width="400" x="30" y="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-65" parent="micro-detail-54" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;Повторы и порядок событий&lt;/b&gt;&lt;br&gt;событие может прийти дважды →&lt;br&gt;нужна идемпотентность" vertex="1">
+                    <mxGeometry height="90" width="400" x="450" y="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-66" parent="micro-detail-54" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;Итог в нескольких БД&lt;/b&gt;&lt;br&gt;голоса, роли и площади в разных сервисах →&lt;br&gt;нужна сверка при подсчёте" vertex="1">
+                    <mxGeometry height="90" width="400" x="870" y="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-67" parent="micro-detail-54" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;Отладка&lt;/b&gt;&lt;br&gt;один голос проходит 4 сервиса →&lt;br&gt;без трассировки не разобраться" vertex="1">
+                    <mxGeometry height="90" width="400" x="1290" y="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-60" edge="1" parent="1" source="micro-detail-55" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-56" value="VoteRequested">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-61" edge="1" parent="1" source="micro-detail-56" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-57" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-62" edge="1" parent="1" source="micro-detail-57" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-58" value="VoteCast">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-63" edge="1" parent="1" source="micro-detail-58" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="micro-detail-59" value="VoteCast">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-68" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Плюсы&lt;/b&gt;&lt;br&gt;• каждый сервис масштабируется отдельно (например, только Notification в пики рассылок)&lt;br&gt;• независимые релизы и отдельные команды на каждую область&lt;br&gt;• сбой одного сервиса (например, Documents) не мешает голосовать&lt;br&gt;• границы данных навязаны инфраструктурой: в чужую БД не залезть&lt;br&gt;• под задачу можно выбрать свою технологию" vertex="1">
+                    <mxGeometry height="200" width="850" x="40" y="1220" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-69" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Минусы&lt;/b&gt;&lt;br&gt;• 8+ сервисов, брокер, 7+ хранилищ: на хакатоне время уйдёт на инфраструктуру&lt;br&gt;• распределённая согласованность: голос, роль и прогноз в разных базах&lt;br&gt;• сложно тестировать и отлаживать сценарий целиком&lt;br&gt;• тяжёлый запуск для жюри, риск не уложиться в 5 минут сборки&lt;br&gt;• дорогая эксплуатация: мониторинг, трассировка, версии контрактов&lt;br&gt;• критерий хакатона «соответствие масштабу MVP» играет против" vertex="1">
+                    <mxGeometry height="200" width="850" x="910" y="1220" as="geometry"/>
+                </mxCell>
+                <mxCell id="micro-detail-70" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" value="&lt;b&gt;Когда оправдано:&lt;/b&gt; десятки регионов и тысячи УК; отдельные команды на уведомления, интеграции и голосование; пиковые рассылки на миллионы сообщений; разные требования к доступности частей системы. Путь туда — выносить из монолита по одному модулю по мере появления реальной причины (вкладка 7)." vertex="1">
+                    <mxGeometry height="80" width="1720" x="40" y="1440" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="compare" name="7. Сравнение и эволюция">
+        <mxGraphModel dx="1620" dy="1951" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1720" pageHeight="940" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="compare-1" parent="1" style="text;html=1;align=left;verticalAlign=middle;whiteSpace=wrap;fontSize=18;" value="&lt;b&gt;Модульный монолит и микросервисы: сравнение и путь эволюции&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="36" width="1640" x="40" y="10" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-2" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;fontStyle=1;" value="Критерий" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-3" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;fontStyle=1;" value="Модульный монолит" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-4" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=12;arcSize=8;fillColor=#eeeeee;strokeColor=#999999;fontStyle=1;" value="Микросервисы" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-5" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Время до работающего MVP&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="118" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-6" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="дни" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="118" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-7" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="недели: сначала инфраструктура" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="118" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-8" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Запуск для жюри&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="166" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-9" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="docker compose, 3–4 контейнера" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="166" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-10" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="20+ контейнеров, брокер, несколько БД" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="166" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-11" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Сборка ≤ 5 минут&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="214" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-12" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="один образ Go + статика" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="214" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-13" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="много образов, есть риск" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="214" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-14" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Точность подсчёта голосов&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="262" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-15" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="транзакции в одной БД" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="262" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-16" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="согласованность «в конечном счёте», нужна сверка" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="262" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-17" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Отладка сценария целиком&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="310" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-18" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="один процесс, один лог" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="310" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-19" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="распределённая трассировка" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="310" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-20" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Масштабирование&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="358" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-21" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;" value="копии целиком + отдельные воркеры" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="358" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-22" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="каждый сервис отдельно" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="358" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-23" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Изоляция сбоев&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="406" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-24" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;" value="частичная: app и worker раздельно" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="406" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-25" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="сбой сервиса не роняет остальные" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="406" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-26" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Независимые релизы и команды&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="454" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-27" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="нет, общий релиз" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="454" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-28" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="да" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="454" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-29" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Стоимость эксплуатации&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="502" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-30" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="низкая" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="502" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-31" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="высокая: мониторинг, контракты, CI/CD на каждый сервис" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="502" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-32" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#ffffff;strokeColor=#999999;align=left;spacingLeft=8;" value="&lt;b&gt;Критерий хакатона «соответствие масштабу MVP»&lt;/b&gt;" vertex="1">
+                    <mxGeometry height="48" width="400" x="40" y="550" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-33" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#d5e8d4;strokeColor=#82b366;" value="соответствует" vertex="1">
+                    <mxGeometry height="48" width="600" x="440" y="550" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-34" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#f8cecc;strokeColor=#b85450;" value="избыточно" vertex="1">
+                    <mxGeometry height="48" width="600" x="1040" y="550" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-35" parent="1" style="rounded=0;whiteSpace=wrap;html=1;container=1;collapsible=0;recursiveResize=0;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=4;fontStyle=1;fontSize=14;" value="Путь эволюции: от монолита к сервисам по мере необходимости" vertex="1">
+                    <mxGeometry height="260" width="1640" x="40" y="640" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-36" parent="compare-35" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Сейчас&lt;/b&gt;&lt;br&gt;модульный монолит&lt;br&gt;с чёткими границами модулей" vertex="1">
+                    <mxGeometry height="110" width="290" x="20" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-37" parent="compare-35" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Шаг 1&lt;/b&gt;&lt;br&gt;выделить воркер&lt;br&gt;в отдельный процесс" vertex="1">
+                    <mxGeometry height="110" width="290" x="340" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-38" parent="compare-35" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Шаг 2&lt;/b&gt;&lt;br&gt;вынести Notification&lt;br&gt;(пики рассылок, лимиты MAX)" vertex="1">
+                    <mxGeometry height="110" width="290" x="660" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-39" parent="compare-35" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Шаг 3&lt;/b&gt;&lt;br&gt;вынести Integration&lt;br&gt;(разные регионы и системы)" vertex="1">
+                    <mxGeometry height="110" width="290" x="980" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-40" parent="compare-35" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;arcSize=8;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;Шаг 4&lt;/b&gt;&lt;br&gt;вынести Documents&lt;br&gt;(тяжёлая генерация PDF)" vertex="1">
+                    <mxGeometry height="110" width="290" x="1300" y="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-45" parent="compare-35" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;size=14;fillColor=#fff2cc;strokeColor=#d6b656;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;" value="Ядро (реестр, подтверждение, инициативы, голосование, подсчёт) остаётся вместе: там нужна транзакционность. Модуль выносим, только когда есть измеримая причина: нагрузка, отдельная команда, свой цикл релизов." vertex="1">
+                    <mxGeometry height="50" width="1600" x="20" y="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-41" edge="1" parent="1" source="compare-36" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="compare-37" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-42" edge="1" parent="1" source="compare-37" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="compare-38" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-43" edge="1" parent="1" source="compare-38" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="compare-39" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="compare-44" edge="1" parent="1" source="compare-39" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;fontSize=10;labelBackgroundColor=#ffffff;" target="compare-40" value="">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
