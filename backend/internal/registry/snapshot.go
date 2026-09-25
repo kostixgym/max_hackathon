@@ -1,0 +1,102 @@
+package registry
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/jackc/pgx/v5"
+)
+
+// Snapshot is a registry version of a house: the base of all vote weights and
+// thresholds. An initiative pins one snapshot and keeps it even after the house
+// moves to a new version (docs/04, принцип 3).
+type Snapshot struct {
+	UploadID       string
+	Version        int
+	TotalAreaCenti int64
+}
+
+// CurrentSnapshot returns the applied registry version the house is on now.
+// ErrNotApplied means that the house has no applied version yet.
+var ErrNotApplied = errors.New("house has no applied registry version")
+
+// CurrentSnapshot returns the current registry snapshot of the house.
+func (s *Store) CurrentSnapshot(ctx context.Context, houseID string) (Snapshot, error) {
+	var snap Snapshot
+	var uploadID *string
+	err := s.pool.QueryRow(ctx, `
+		SELECT ru.id::text, ru.version, ru.total_area_centi
+		FROM houses h
+		LEFT JOIN registry_uploads ru
+		     ON ru.house_id = h.id AND ru.version = h.current_registry_version
+		WHERE h.id = $1::uuid`, houseID,
+	).Scan(&uploadID, &snap.Version, &snap.TotalAreaCenti)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return snap, ErrNotFound
+	}
+	if err != nil {
+		return snap, fmt.Errorf("current snapshot: %w", err)
+	}
+	if uploadID == nil {
+		return snap, ErrNotApplied
+	}
+	snap.UploadID = *uploadID
+
+	return snap, nil
+}
+
+// SnapshotTotal returns the total area of the given snapshot in hundredths of м².
+func (s *Store) SnapshotTotal(ctx context.Context, uploadID string) (int64, error) {
+	var total int64
+	err := s.pool.QueryRow(ctx,
+		`SELECT total_area_centi FROM registry_uploads WHERE id = $1::uuid`, uploadID).Scan(&total)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("snapshot total: %w", err)
+	}
+
+	return total, nil
+}
+
+// OwnerWeightInSnapshot returns the exact vote weight (hundredths of м² as a
+// fraction) of the owner in the given snapshot version. ErrNotFound means the
+// owner is absent from that version, so the vote cannot be counted.
+func (s *Store) OwnerWeightInSnapshot(ctx context.Context, uploadID, ownerID string) (num, den int64, err error) {
+	err = s.pool.QueryRow(ctx, `
+		SELECT weight_num, weight_den
+		FROM owner_records
+		WHERE registry_upload_id = $1::uuid AND owner_id = $2::uuid`,
+		uploadID, ownerID).Scan(&num, &den)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("owner weight in snapshot: %w", err)
+	}
+
+	return num, den, nil
+}
+
+// PremiseByNumber returns the premise of the house with the given number.
+func (s *Store) PremiseByNumber(ctx context.Context, houseID, number string) (Premise, error) {
+	var p Premise
+	err := s.pool.QueryRow(ctx, `
+		SELECT p.id::text, p.number, p.kind, p.entrance, p.floor, p.display_area_centi,
+		       h.id::text, h.org_id::text, h.invite_slug, h.address, h.region, h.is_demo
+		FROM premises p
+		JOIN houses h ON h.id = p.house_id
+		WHERE p.house_id = $1::uuid AND p.number = $2`, houseID, number,
+	).Scan(&p.ID, &p.Number, &p.Kind, &p.Entrance, &p.Floor, &p.DisplayAreaCenti,
+		&p.House.ID, &p.House.OrgID, &p.House.InviteSlug, &p.House.Address, &p.House.Region, &p.House.IsDemo)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return p, ErrNotFound
+	}
+	if err != nil {
+		return p, fmt.Errorf("premise by number: %w", err)
+	}
+
+	return p, nil
+}

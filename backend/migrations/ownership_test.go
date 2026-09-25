@@ -23,7 +23,8 @@ var tableOwners = map[string][]string{
 	"meeting": {
 		"demands", "meetings", "ballots", "ballot_decisions", "gis_result_entries", "meeting_results",
 	},
-	"audit": {"audit_logs"},
+	"audit":  {"audit_logs"},
+	"notify": {"jobs", "bot_markers"},
 }
 
 var (

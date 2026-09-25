@@ -41,6 +41,11 @@ type Bot struct {
 	Houses   Houses
 	Me       Identity
 	Log      *slog.Logger
+
+	// Poll voting deps (stage 1). Callbacks are ignored when they are not wired.
+	Users   Users
+	Votes   Votes
+	Answers Answers
 }
 
 // openAppPayload is what MAX accepts in the payload of an open_app button;
@@ -53,6 +58,8 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 	case model.UpdateBotStarted:
 		// «Начать» in a new dialog; a deep link max.ru/<bot>?start=<slug> puts the slug into Payload.
 		b.start(ctx, u, u.Payload)
+	case model.UpdateMessageCallback:
+		b.callback(ctx, u)
 	case model.UpdateMessageCreated:
 		msg := u.GetMessage()
 		if msg.Sender.IsBot || msg.Recipient.ChatType != model.ChatTypeDialog {

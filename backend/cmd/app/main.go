@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,12 +21,15 @@ import (
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/bot"
 	"maxhackathon/backend/internal/initiatives"
+	"maxhackathon/backend/internal/notify"
 	"maxhackathon/backend/internal/platform/config"
 	"maxhackathon/backend/internal/platform/db"
 	"maxhackathon/backend/internal/platform/httpapi"
 	"maxhackathon/backend/internal/platform/maxbot"
 	"maxhackathon/backend/internal/platform/security"
+	"maxhackathon/backend/internal/poll"
 	"maxhackathon/backend/internal/registry"
+	"maxhackathon/backend/internal/rules"
 	"maxhackathon/backend/migrations"
 )
 
@@ -71,8 +75,15 @@ func run() error {
 
 	hasher := security.NewHasher(cfg.HMACSecret)
 	// Modules read each other's data only through interfaces; the wiring is here.
+	// access needs the legacy initiatives reader, initiatives.Service needs access
+	// as the poll audience: interfaces on both sides keep the wiring acyclic.
 	houses := registry.NewStore(pool)
+	tm := db.NewTransactionManager(pool)
+	notifier := notify.NewStore(pool)
+	catalog := rules.NewCatalog(pool)
 	users := access.NewStore(pool, houses, initiatives.NewStore(pool))
+	initService := initiatives.NewService(pool, tm, catalog, houses, users, notifier)
+	polls := poll.NewStore(pool, initService, users, houses)
 
 	if cfg.SeedDemo {
 		slug, err := houses.SeedDemo(ctx, hasher, cfg.DemoInviteSlug, log)
@@ -81,6 +92,9 @@ func run() error {
 		}
 		// The invite link is public by design (it hangs on the entrance door), logging it is fine.
 		log.Info("demo house ready", "invite_slug", slug)
+		if err := catalog.SeedCatalog(ctx); err != nil {
+			return fmt.Errorf("seed rules catalog: %w", err)
+		}
 	}
 
 	handler := httpapi.NewHandler(httpapi.Deps{
@@ -97,11 +111,26 @@ func run() error {
 		DB:       pool,
 		Log:      log,
 		DevMode:  cfg.DevMode,
+
+		Access:       users,
+		Initiatives:  initService,
+		PollStarter:  initService,
+		PollProgress: polls,
+		DemoMembers:  users,
 	})
 
 	var wg sync.WaitGroup
 	if cfg.BotToken != "" {
-		wg.Go(func() { runBot(ctx, cfg.BotToken, houses, log) })
+		wg.Go(func() {
+			runBot(ctx, cfg.BotToken, botDeps{
+				houses:      houses,
+				houseByID:   houses,
+				users:       users,
+				votes:       polls,
+				initiatives: initService,
+				notifier:    notifier,
+			}, log)
+		})
 	}
 
 	srv := &http.Server{
@@ -138,9 +167,26 @@ func run() error {
 	return err
 }
 
-// runBot starts the chat bot. Problems with the MAX API never stop the service:
-// the HTTP API of the mini-app keeps working, the bot retries.
-func runBot(ctx context.Context, token string, houses bot.Houses, log *slog.Logger, opts ...maxapi.Opt) {
+// botDeps bundles the domain modules the bot and the worker talk to.
+type botDeps struct {
+	houses      bot.Houses
+	houseByID   bot.HouseReader
+	users       bot.Users
+	votes       bot.Votes
+	initiatives bot.PollingReader
+	notifier    botNotifier
+}
+
+// botNotifier is everything the bot runtime needs from the notify module:
+// the job queue for the worker and markers for the poller.
+type botNotifier interface {
+	notify.Queue
+	maxbot.Markers
+}
+
+// runBot starts the chat bot and the notify worker. Problems with the MAX API
+// never stop the service: the HTTP API of the mini-app keeps working, the bot retries.
+func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, opts ...maxapi.Opt) {
 	api, err := maxapi.NewApi(token, opts...)
 	if err != nil {
 		log.Error("bot: create MAX client", "err", err)
@@ -166,18 +212,40 @@ func runBot(ctx context.Context, token string, houses bot.Houses, log *slog.Logg
 		log.Warn("bot: webhook subscriptions exist, long polling will get no updates", "count", len(subs.Subscriptions))
 	}
 
+	inviter := &bot.PollInviter{
+		Messages:    api.Messages,
+		Initiatives: deps.initiatives,
+		Houses:      deps.houseByID,
+	}
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		worker := &notify.Worker{
+			Queue:    deps.notifier,
+			Handlers: map[string]notify.JobHandler{notify.TypePollInvite: inviter.HandleJob},
+			Log:      log,
+		}
+		worker.Run(ctx)
+	})
+
 	log.Info("bot started", "username", me.Username, "bot_id", me.UserID)
 	poller := &maxbot.Poller{
 		Updates: api.Subscriptions,
 		Handler: &bot.Bot{
 			Messages: api.Messages,
-			Houses:   houses,
+			Houses:   deps.houses,
 			Me:       bot.Identity{UserID: me.UserID, Username: me.Username},
 			Log:      log,
+			Users:    deps.users,
+			Votes:    deps.votes,
+			Answers:  api.Messages,
 		},
-		Log: log,
+		Log:     log,
+		BotID:   me.UserID,
+		Markers: deps.notifier,
 	}
 	poller.Run(ctx)
+	wg.Wait()
 	log.Info("bot stopped")
 }
 

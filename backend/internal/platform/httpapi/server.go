@@ -26,6 +26,12 @@ type Readiness interface {
 	Ping(ctx context.Context) error
 }
 
+// AccessChecks answers permission questions of the endpoints (the access module).
+type AccessChecks interface {
+	IsVerifiedOwnerIn(ctx context.Context, userID, houseID string) (bool, error)
+	IsVerifiedMemberIn(ctx context.Context, userID, houseID string) (bool, error)
+}
+
 // Deps are the dependencies of the API.
 type Deps struct {
 	Auth     *Authenticator
@@ -34,11 +40,22 @@ type Deps struct {
 	DB       Readiness
 	Log      *slog.Logger
 	DevMode  bool
+
+	// Stage 1: initiatives and the support poll.
+	Access       AccessChecks
+	Initiatives  InitiativeCreator
+	PollStarter  PollStarter
+	PollProgress PollProgress
+	DemoMembers  DemoMembership
 }
 
 // NewHandler builds the router of the API.
 func NewHandler(d Deps) http.Handler {
-	h := &handlers{houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode}
+	h := &handlers{
+		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode,
+		access: d.Access, initiatives: d.Initiatives, pollStarter: d.PollStarter,
+		pollProgress: d.PollProgress, demoMembers: d.DemoMembers,
+	}
 
 	// Application logs are emitted through slog; Gin's debug route dump would
 	// otherwise mix plain text into the JSON log stream.
@@ -64,6 +81,12 @@ func NewHandler(d Deps) http.Handler {
 	protected.GET("/premises/:premiseID/owners", h.premiseOwners)
 	protected.GET("/houses/:house/meeting-officer-candidates", h.meetingOfficerCandidates)
 
+	// Stage 1: the support poll.
+	protected.POST("/houses/:house/demo-membership", h.demoMembership)
+	protected.POST("/initiatives", h.createInitiative)
+	protected.POST("/initiatives/:id/start-poll", h.startPoll)
+	protected.GET("/initiatives/:id/progress", h.initiativeProgress)
+
 	return router
 }
 
@@ -73,6 +96,13 @@ type handlers struct {
 	db       Readiness
 	log      *slog.Logger
 	devMode  bool
+
+	// Stage 1.
+	access       AccessChecks
+	initiatives  InitiativeCreator
+	pollStarter  PollStarter
+	pollProgress PollProgress
+	demoMembers  DemoMembership
 }
 
 func (h *handlers) healthz(c *gin.Context) {
