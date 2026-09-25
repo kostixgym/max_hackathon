@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"maxhackathon/backend/internal/registry"
 	"maxhackathon/backend/internal/rules"
 )
@@ -19,34 +21,77 @@ type Houses interface {
 	HouseBySlug(ctx context.Context, slug string) (registry.HouseSummary, error)
 }
 
+// Readiness checks whether a required dependency is available.
+type Readiness interface {
+	Ping(ctx context.Context) error
+}
+
 // Deps are the dependencies of the API.
 type Deps struct {
 	Auth    *Authenticator
 	Houses  Houses
+	DB      Readiness
 	Log     *slog.Logger
 	DevMode bool
 }
 
 // NewHandler builds the router of the API.
 func NewHandler(d Deps) http.Handler {
-	h := &handlers{houses: d.Houses, log: d.Log, devMode: d.DevMode}
+	h := &handlers{houses: d.Houses, db: d.DB, log: d.Log, devMode: d.DevMode}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", h.healthz)
-	mux.Handle("GET /api/me", d.Auth.Middleware(http.HandlerFunc(h.me)))
-	mux.Handle("GET /api/houses/{slug}", d.Auth.Middleware(http.HandlerFunc(h.house)))
+	// Application logs are emitted through slog; Gin's debug route dump would
+	// otherwise mix plain text into the JSON log stream.
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+	router.HandleMethodNotAllowed = true
+	router.Use(requestLogger(d.Log), recovery(d.Log))
+	router.NoRoute(func(c *gin.Context) {
+		writeError(c, http.StatusNotFound, "not_found", "Маршрут не найден")
+	})
+	router.NoMethod(func(c *gin.Context) {
+		writeError(c, http.StatusMethodNotAllowed, "method_not_allowed", "Метод не поддерживается")
+	})
 
-	return recoverer(d.Log, logRequests(d.Log, mux))
+	api := router.Group("/api/v1")
+	api.GET("/healthz", h.healthz)
+	api.GET("/readyz", h.readyz)
+
+	protected := api.Group("")
+	protected.Use(d.Auth.Middleware())
+	protected.GET("/me", h.me)
+	protected.GET("/houses/:slug", h.house)
+
+	return router
 }
 
 type handlers struct {
 	houses  Houses
+	db      Readiness
 	log     *slog.Logger
 	devMode bool
 }
 
-func (h *handlers) healthz(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+func (h *handlers) healthz(c *gin.Context) {
+	writeJSON(c, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *handlers) readyz(c *gin.Context) {
+	if h.db == nil {
+		writeError(c, http.StatusServiceUnavailable, "not_ready", "Сервис временно не готов")
+
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	if err := h.db.Ping(ctx); err != nil {
+		h.log.Warn("readiness check failed", "err", err)
+		writeError(c, http.StatusServiceUnavailable, "not_ready", "Сервис временно не готов")
+
+		return
+	}
+
+	writeJSON(c, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 type meResponse struct {
@@ -62,12 +107,12 @@ type meUser struct {
 
 // me returns the caller and, if the mini-app was opened by a house link
 // (start_param = invite slug), the summary of that house.
-func (h *handlers) me(w http.ResponseWriter, r *http.Request) {
-	id, ok := IdentityFrom(r.Context())
+func (h *handlers) me(c *gin.Context) {
+	id, ok := IdentityFrom(c)
 	if !ok {
 		// Only possible if the route is registered without the auth middleware.
 		h.log.Error("me: no identity in context")
-		writeError(w, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
 
 		return
 	}
@@ -77,42 +122,43 @@ func (h *handlers) me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if id.StartParam != "" {
-		house, err := h.houses.HouseBySlug(r.Context(), id.StartParam)
+		house, err := h.houses.HouseBySlug(c.Request.Context(), id.StartParam)
 		switch {
 		case err == nil:
 			j := toHouseJSON(house)
 			resp.House = &j
 		case !errors.Is(err, registry.ErrNotFound):
 			h.log.Error("house by start_param", "err", err)
-			writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить дом, попробуйте ещё раз")
+			writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить дом, попробуйте ещё раз")
 
 			return
 		}
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(c, http.StatusOK, resp)
 }
 
-func (h *handlers) house(w http.ResponseWriter, r *http.Request) {
-	house, err := h.houses.HouseBySlug(r.Context(), r.PathValue("slug"))
+func (h *handlers) house(c *gin.Context) {
+	house, err := h.houses.HouseBySlug(c.Request.Context(), c.Param("slug"))
 	switch {
 	case errors.Is(err, registry.ErrNotFound):
-		writeError(w, http.StatusNotFound, "house_not_found", "Дом не найден. Проверьте ссылку от управляющей компании")
+		writeError(c, http.StatusNotFound, "house_not_found", "Дом не найден. Проверьте ссылку от управляющей компании")
 
 		return
 	case err != nil:
 		h.log.Error("house by slug", "err", err)
-		writeError(w, http.StatusInternalServerError, "internal", "Не удалось загрузить дом, попробуйте ещё раз")
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить дом, попробуйте ещё раз")
 
 		return
 	}
 
-	writeJSON(w, http.StatusOK, toHouseJSON(house))
+	writeJSON(c, http.StatusOK, toHouseJSON(house))
 }
 
 // houseJSON: areas are decimal strings in м² with a dot ("3000.00"): exact values
 // travel as text, the mini-app formats them for display.
 type houseJSON struct {
+	ID              string          `json:"id"`
 	Slug            string          `json:"slug"`
 	Address         string          `json:"address"`
 	Region          string          `json:"region"`
@@ -131,6 +177,7 @@ type thresholdsJSON struct {
 
 func toHouseJSON(h registry.HouseSummary) houseJSON {
 	j := houseJSON{
+		ID:              h.ID,
 		Slug:            h.InviteSlug,
 		Address:         h.Address,
 		Region:          h.Region,
@@ -156,35 +203,28 @@ func toHouseJSON(h registry.HouseSummary) houseJSON {
 
 func m2(v *big.Rat) string { return v.FloatString(2) }
 
-type statusWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (s *statusWriter) WriteHeader(code int) {
-	s.status = code
-	s.ResponseWriter.WriteHeader(code)
-}
-
 // logRequests logs method, path, status and duration. Headers are not logged:
 // initData contains personal data of the user.
-func logRequests(log *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func requestLogger(log *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		start := time.Now()
-		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(sw, r)
-		log.Info("http", "method", r.Method, "path", r.URL.Path, "status", sw.status, "duration_ms", time.Since(start).Milliseconds())
-	})
+		c.Next()
+		log.Info("http", "method", c.Request.Method, "path", c.Request.URL.Path,
+			"status", c.Writer.Status(), "duration_ms", time.Since(start).Milliseconds())
+	}
 }
 
-func recoverer(log *slog.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func recovery(log *slog.Logger) gin.HandlerFunc {
+	return func(c *gin.Context) {
 		defer func() {
 			if v := recover(); v != nil {
-				log.Error("panic in handler", "panic", v, "path", r.URL.Path)
-				writeError(w, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+				log.Error("panic in handler", "panic", v, "path", c.Request.URL.Path)
+				if !c.Writer.Written() {
+					writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+				}
+				c.Abort()
 			}
 		}()
-		next.ServeHTTP(w, r)
-	})
+		c.Next()
+	}
 }

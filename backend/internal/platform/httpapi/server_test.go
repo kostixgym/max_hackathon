@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -83,12 +84,20 @@ func (fakeHouses) HouseBySlug(_ context.Context, slug string) (registry.HouseSum
 	v, total := 1, int64(300000)
 
 	return registry.HouseSummary{
-		InviteSlug: slug, Address: "демо", IsDemo: true, PremisesCount: 61,
+		ID: "house-demo", InviteSlug: slug, Address: "демо", IsDemo: true, PremisesCount: 61,
 		RegistryVersion: &v, TotalAreaCenti: &total,
 	}, nil
 }
 
+type fakeReadiness struct{ err error }
+
+func (f fakeReadiness) Ping(context.Context) error { return f.err }
+
 func newTestServer(devMode bool) (http.Handler, *fakeUsers) {
+	return newTestServerWithReadiness(devMode, nil)
+}
+
+func newTestServerWithReadiness(devMode bool, readinessErr error) (http.Handler, *fakeUsers) {
 	users := &fakeUsers{seen: map[int64]bool{}}
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 	auth := &Authenticator{
@@ -96,7 +105,9 @@ func newTestServer(devMode bool) (http.Handler, *fakeUsers) {
 		Users: users, Log: log, Now: func() time.Time { return testNow },
 	}
 
-	return NewHandler(Deps{Auth: auth, Houses: fakeHouses{}, Log: log, DevMode: devMode}), users
+	return NewHandler(Deps{
+		Auth: auth, Houses: fakeHouses{}, DB: fakeReadiness{err: readinessErr}, Log: log, DevMode: devMode,
+	}), users
 }
 
 func do(h http.Handler, path string, headers map[string]string) *httptest.ResponseRecorder {
@@ -114,7 +125,7 @@ func TestMeWithValidInitData(t *testing.T) {
 	h, users := newTestServer(false)
 	initData := signInitData(testToken, launch(42, testNow.Add(-time.Minute), "demo-slug"))
 
-	rec := do(h, "/api/me", map[string]string{HeaderInitData: initData})
+	rec := do(h, "/api/v1/me", map[string]string{HeaderInitData: initData})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -132,7 +143,7 @@ func TestMeWithValidInitData(t *testing.T) {
 	if resp.User.ID != "user-42" || resp.User.FirstName != "Анна" {
 		t.Fatalf("user = %+v", resp.User)
 	}
-	if resp.House == nil || resp.House.Thresholds == nil {
+	if resp.House == nil || resp.House.ID != "house-demo" || resp.House.Thresholds == nil {
 		t.Fatalf("house by start_param expected, got %s", rec.Body)
 	}
 	if *resp.House.TotalAreaM2 != "3000.00" || resp.House.Thresholds.DemandM2 != "300.00" ||
@@ -153,7 +164,7 @@ func TestInitDataRejected(t *testing.T) {
 	}
 	for name, initData := range cases {
 		t.Run(name, func(t *testing.T) {
-			rec := do(h, "/api/me", map[string]string{HeaderInitData: initData})
+			rec := do(h, "/api/v1/me", map[string]string{HeaderInitData: initData})
 			if rec.Code != http.StatusUnauthorized {
 				t.Fatalf("status = %d, want 401; body = %s", rec.Code, rec.Body)
 			}
@@ -165,12 +176,12 @@ func TestDevModeHeader(t *testing.T) {
 	headers := map[string]string{HeaderDevUserID: "7", HeaderDevStartParam: "demo-slug"}
 
 	prod, _ := newTestServer(false)
-	if rec := do(prod, "/api/me", headers); rec.Code != http.StatusUnauthorized {
+	if rec := do(prod, "/api/v1/me", headers); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("dev header must be ignored without DEV_MODE, got %d", rec.Code)
 	}
 
 	dev, users := newTestServer(true)
-	rec := do(dev, "/api/me", headers)
+	rec := do(dev, "/api/v1/me", headers)
 	if rec.Code != http.StatusOK || !users.seen[7] {
 		t.Fatalf("dev mode: status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -181,14 +192,14 @@ func TestDevModeHeader(t *testing.T) {
 
 func TestNoCredentials(t *testing.T) {
 	h, _ := newTestServer(true)
-	if rec := do(h, "/api/me", nil); rec.Code != http.StatusUnauthorized {
+	if rec := do(h, "/api/v1/me", nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
 	}
 }
 
 func TestHouseNotFound(t *testing.T) {
 	h, _ := newTestServer(true)
-	rec := do(h, "/api/houses/unknown", map[string]string{HeaderDevUserID: "7"})
+	rec := do(h, "/api/v1/houses/unknown", map[string]string{HeaderDevUserID: "7"})
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "house_not_found") {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
@@ -196,7 +207,19 @@ func TestHouseNotFound(t *testing.T) {
 
 func TestHealthzIsPublic(t *testing.T) {
 	h, _ := newTestServer(false)
-	if rec := do(h, "/healthz", nil); rec.Code != http.StatusOK {
+	if rec := do(h, "/api/v1/healthz", nil); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d", rec.Code)
+	}
+}
+
+func TestReadyzIsPublic(t *testing.T) {
+	h, _ := newTestServer(false)
+	if rec := do(h, "/api/v1/readyz", nil); rec.Code != http.StatusOK {
+		t.Fatalf("ready status = %d", rec.Code)
+	}
+
+	h, _ = newTestServerWithReadiness(false, errors.New("database unavailable"))
+	if rec := do(h, "/api/v1/readyz", nil); rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("not ready status = %d, want 503", rec.Code)
 	}
 }

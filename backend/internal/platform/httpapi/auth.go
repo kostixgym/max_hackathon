@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	maxbot "github.com/max-messenger/max-bot-api-client-go/v2"
 
 	"maxhackathon/backend/internal/access"
@@ -31,11 +32,15 @@ type Identity struct {
 	Dev        bool
 }
 
-type identityKey struct{}
+const identityContextKey = "max_identity"
 
 // IdentityFrom returns the identity put into the context by the auth middleware.
-func IdentityFrom(ctx context.Context) (Identity, bool) {
-	id, ok := ctx.Value(identityKey{}).(Identity)
+func IdentityFrom(c *gin.Context) (Identity, bool) {
+	value, ok := c.Get(identityContextKey)
+	if !ok {
+		return Identity{}, false
+	}
+	id, ok := value.(Identity)
 
 	return id, ok
 }
@@ -59,36 +64,40 @@ type Authenticator struct {
 	Now      func() time.Time
 }
 
-// Middleware authenticates the request and puts Identity into its context.
-func (a *Authenticator) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, ok := a.identify(w, r)
+// Middleware authenticates the request and puts Identity into the Gin context.
+func (a *Authenticator) Middleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, ok := a.identify(c)
 		if !ok {
+			c.Abort()
+
 			return
 		}
 
-		u, err := a.Users.UpsertUser(r.Context(), id.MaxUserID)
+		u, err := a.Users.UpsertUser(c.Request.Context(), id.MaxUserID)
 		if err != nil {
 			a.Log.Error("upsert user", "err", err)
-			writeError(w, http.StatusInternalServerError, "internal", "Не удалось обработать запрос, попробуйте ещё раз")
+			writeError(c, http.StatusInternalServerError, "internal", "Не удалось обработать запрос, попробуйте ещё раз")
+			c.Abort()
 
 			return
 		}
 		id.UserID = u.ID
+		c.Set(identityContextKey, id)
 
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityKey{}, id)))
-	})
+		c.Next()
+	}
 }
 
-func (a *Authenticator) identify(w http.ResponseWriter, r *http.Request) (Identity, bool) {
-	if initData := r.Header.Get(HeaderInitData); initData != "" {
-		return a.fromInitData(w, initData)
+func (a *Authenticator) identify(c *gin.Context) (Identity, bool) {
+	if initData := c.GetHeader(HeaderInitData); initData != "" {
+		return a.fromInitData(c, initData)
 	}
 
-	if a.DevMode && r.Header.Get(HeaderDevUserID) != "" {
-		maxID, err := strconv.ParseInt(r.Header.Get(HeaderDevUserID), 10, 64)
+	if a.DevMode && c.GetHeader(HeaderDevUserID) != "" {
+		maxID, err := strconv.ParseInt(c.GetHeader(HeaderDevUserID), 10, 64)
 		if err != nil || maxID <= 0 {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "Некорректный X-Dev-User-Id")
+			writeError(c, http.StatusUnauthorized, "unauthorized", "Некорректный X-Dev-User-Id")
 
 			return Identity{}, false
 		}
@@ -96,19 +105,19 @@ func (a *Authenticator) identify(w http.ResponseWriter, r *http.Request) (Identi
 		return Identity{
 			MaxUserID:  maxID,
 			FirstName:  "Разработчик",
-			StartParam: r.Header.Get(HeaderDevStartParam),
+			StartParam: c.GetHeader(HeaderDevStartParam),
 			Dev:        true,
 		}, true
 	}
 
-	writeError(w, http.StatusUnauthorized, "unauthorized", "Откройте приложение из MAX")
+	writeError(c, http.StatusUnauthorized, "unauthorized", "Откройте приложение из MAX")
 
 	return Identity{}, false
 }
 
-func (a *Authenticator) fromInitData(w http.ResponseWriter, initData string) (Identity, bool) {
+func (a *Authenticator) fromInitData(c *gin.Context, initData string) (Identity, bool) {
 	if a.BotToken == "" {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "Сервер запущен без токена бота")
+		writeError(c, http.StatusUnauthorized, "unauthorized", "Сервер запущен без токена бота")
 
 		return Identity{}, false
 	}
@@ -117,7 +126,7 @@ func (a *Authenticator) fromInitData(w http.ResponseWriter, initData string) (Id
 	if err != nil || data.User.ID <= 0 {
 		// The reason is logged, not returned: it helps an attacker more than a user.
 		a.Log.Warn("invalid initData", "err", err)
-		writeError(w, http.StatusUnauthorized, "invalid_init_data", "Не удалось проверить запуск из MAX, откройте приложение заново")
+		writeError(c, http.StatusUnauthorized, "invalid_init_data", "Не удалось проверить запуск из MAX, откройте приложение заново")
 
 		return Identity{}, false
 	}
@@ -125,7 +134,7 @@ func (a *Authenticator) fromInitData(w http.ResponseWriter, initData string) (Id
 	now := a.Now()
 	authAt := time.Unix(data.AuthDate, 0)
 	if now.Sub(authAt) > a.MaxAge || authAt.Sub(now) > maxClockSkew {
-		writeError(w, http.StatusUnauthorized, "init_data_expired", "Сессия устарела, откройте приложение заново")
+		writeError(c, http.StatusUnauthorized, "init_data_expired", "Сессия устарела, откройте приложение заново")
 
 		return Identity{}, false
 	}

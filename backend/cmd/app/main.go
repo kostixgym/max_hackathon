@@ -78,6 +78,7 @@ func run() error {
 			Now:      time.Now,
 		},
 		Houses:  houses,
+		DB:      pool,
 		Log:     log,
 		DevMode: cfg.DevMode,
 	})

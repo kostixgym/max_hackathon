@@ -164,7 +164,7 @@
 | Задача | Библиотека |
 |---|---|
 | MAX Bot API | официальный клиент [max-bot-api-client-go](https://github.com/max-messenger/max-bot-api-client-go) |
-| HTTP API для мини-приложения | стандартный `net/http` |
+| HTTP API для мини-приложения | `Gin` поверх стандартного `net/http` |
 | PostgreSQL | `pgx/v5` |
 | Миграции | `goose` |
 | Логи | стандартный `log/slog` |
