@@ -814,7 +814,8 @@
 }
 ```
 
-Для реализации потребуется сущность `RegistryCorrectionRequest` и список таких обращений в кабинете УК.
+Таблица `registry_correction_requests` уже предусмотрена миграциями; HTTP-обработчик и список таких
+обращений в кабинете УК ещё нужно реализовать.
 
 ### `GET /api/v1/orgs/{orgID}/verification-requests`
 

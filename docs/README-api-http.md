@@ -5,7 +5,7 @@
 Входящий HTTP-адаптер реализован на Gin. Gin используется только для маршрутизации, middleware и
 HTTP-контекста; доменные модули и PostgreSQL-репозитории от него не зависят.
 
-> Статус на 25.09.2026: контракт для MVP. Он сопоставляет пользовательские сценарии из
+> Статус на 25.09.2026: контракт для MVP и физическая схема из 23 последовательных миграций. Он сопоставляет пользовательские сценарии из
 > [02-koncepciya-produkta.md](02-koncepciya-produkta.md), модель данных из
 > [04-model-dannyh.md](04-model-dannyh.md) и этапы из [05-plan-realizacii.md](05-plan-realizacii.md)
 > с фактически реализованным кодом и журналом [completed/README.md](completed/README.md).
@@ -40,13 +40,15 @@ HTTP-контекста; доменные модули и PostgreSQL-репоз�
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
+| `GET /api/v1/houses/{houseID}/premises?number={number}` | Найти помещения дома для создания привязки | Нет, БД готова | `House`, `Premise`, `Membership` | Готовы |
 | `POST /api/v1/memberships` | Выбрать помещение и создать привязку со статусом гостя | Нет, БД готова | `User`, `House`, `Premise`, `Membership` | Готовы |
 | `POST /api/v1/memberships/{id}/verify/account` | Проверить лицевой счёт и сумму последнего начисления, повысить роль до жителя | Нет, БД частично | `Membership`, `Premise`; источник суммы начисления | `account_hmac` есть, источника суммы пока нет |
 | `POST /api/v1/memberships/{id}/request-owner-verification` | Выбрать замаскированную запись собственника и отправить заявку в УК | Нет, БД готова | `Membership`, `Owner`, `OwnerRecord` | Готовы |
 | `POST /api/v1/memberships/{id}/verify/demo` | Автоподтверждение собственника только для демо-дома | Нет, БД готова | `House`, `Membership`, `Owner`, `OwnerRecord` | Готовы |
+| `POST /api/v1/memberships/{id}/data-correction-requests` | Сообщить УК, что данные текущего реестра неверны | Нет, БД готова | `RegistryCorrectionRequest`, `Membership`, `RegistryUpload` | Готовы |
 | `GET /api/v1/orgs/{orgID}/verification-requests` | Очередь заявок на подтверждение для сотрудника УК | Нет, БД готова | `OrgMember`, `Membership`, `Owner`, `OwnerRecord` | Готовы |
 | `POST /api/v1/memberships/{id}/approve` | Подтвердить собственника сотрудником УК | Нет, БД готова | `OrgMember`, `Membership` | Готовы |
-| `POST /api/v1/memberships/{id}/reject` | Отклонить заявку с причиной | Нет, БД готова | `OrgMember`, `Membership`, желательно `AuditLog` | `Membership` готова, `AuditLog` отсутствует |
+| `POST /api/v1/memberships/{id}/reject` | Отклонить заявку с причиной | Нет, БД готова | `OrgMember`, `Membership`, `AuditLog` | Готовы |
 
 Номер телефона не должен приниматься обычной HTTP-ручкой мини-приложения. Подтверждённый MAX номер
 приходит событием `requestContact` от бота, после чего обработчик сравнивает HMAC с
@@ -60,11 +62,11 @@ HTTP-контекста; доменные модули и PostgreSQL-репоз�
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
-| `GET /api/v1/templates` | Список доступных шаблонов инициатив | Нет, БД не готова | `Template`, `TemplateItem`, `DecisionType` | Отсутствуют |
-| `GET /api/v1/templates/{code}` | Форма шаблона, вопросы повестки и правила большинства | Нет, БД не готова | `Template`, `TemplateItem`, `DecisionType` | Отсутствуют |
+| `GET /api/v1/templates` | Список доступных шаблонов инициатив | Нет, БД готова | `Template`, `TemplateItem`, `DecisionType` | Готовы |
+| `GET /api/v1/templates/{code}` | Форма шаблона, вопросы повестки и правила большинства | Нет, БД готова | `Template`, `TemplateItem`, `DecisionType` | Готовы |
 
-Калькулятор порогов уже реализован в Go в модуле `rules`, но каталог типов решений и шаблонов
-в PostgreSQL ещё не создан.
+Калькулятор порогов уже реализован в Go в модуле `rules`; каталог типов решений и шаблонов создан
+в PostgreSQL, но его ещё нужно наполнить начальными данными.
 
 Контракт `params_schema` зафиксирован как JSON Schema Draft 2020-12 с отдельным необязательным
 `ui_schema`. Поддерживаемое MVP-подмножество и полный пример ответа описаны в
@@ -74,12 +76,13 @@ HTTP-контекста; доменные модули и PostgreSQL-репоз�
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
-| `GET /api/v1/houses/{houseID}/initiatives` | Список доступных пользователю инициатив дома | Нет, БД не готова | `Initiative`, `Membership` | `Initiative` отсутствует |
-| `POST /api/v1/houses/{houseID}/initiatives` | Создать черновик из шаблона и зафиксировать версию реестра | Нет, БД не готова | `Initiative`, `AgendaItem`, `Template`, `RegistryUpload` | Дом и реестр готовы, остальные отсутствуют |
-| `GET /api/v1/initiatives/{id}` | Карточка инициативы, повестка, стадия и разрешённые действия | Нет, БД не готова | `Initiative`, `AgendaItem` | Отсутствуют |
-| `PATCH /api/v1/initiatives/{id}` | Изменить черновик; после старта опроса изменение сбрасывает голоса по правилам модели | Нет, БД не готова | `Initiative`, `AgendaItem`, `PollVote`, `AuditLog` | Отсутствуют |
-| `POST /api/v1/initiatives/{id}/start-poll` | Проверить роль инициатора, заморозить снимок реестра и поставить рассылку в очередь | Нет, БД не готова | `Initiative`, `PollVote`, служебная очередь задач | Отсутствуют |
-| `POST /api/v1/initiatives/{id}/cancel` | Отменить инициативу до собрания с обязательной причиной | Нет, БД не готова | `Initiative`, `AuditLog` | Отсутствуют |
+| `GET /api/v1/houses/{houseID}/initiatives` | Список доступных пользователю инициатив дома | Нет, БД готова | `Initiative`, `Membership` | Готовы |
+| `POST /api/v1/houses/{houseID}/initiatives` | Создать черновик из шаблона и зафиксировать версию реестра | Нет, БД готова | `Initiative`, `AgendaItem`, `Template`, `RegistryUpload` | Готовы |
+| `GET /api/v1/initiatives/{id}` | Карточка инициативы, повестка, стадия и разрешённые действия | Нет, БД готова | `Initiative`, `AgendaItem` | Готовы |
+| `PATCH /api/v1/initiatives/{id}` | Изменить черновик; после старта опроса изменение сбрасывает голоса по правилам модели | Нет, БД готова | `Initiative`, `AgendaItem`, `PollVote`, `AuditLog` | Готовы |
+| `POST /api/v1/initiatives/{id}/start-poll` | Проверить роль инициатора, заморозить снимок реестра и поставить рассылку в очередь | Нет, БД готова | `Initiative`, `PollVote`, служебная очередь задач | Доменные таблицы готовы; служебные таблицы создаст библиотека очереди |
+| `POST /api/v1/initiatives/{id}/self-organize` | Выбрать самостоятельный путь B без участия УК | Нет, БД готова | `Initiative`, `Meeting`, `AuditLog` | Готовы; отдельная таблица пути B не нужна |
+| `POST /api/v1/initiatives/{id}/cancel` | Отменить инициативу до собрания с обязательной причиной | Нет, БД готова | `Initiative`, `AuditLog` | Готовы |
 
 `allowed_actions` — не список строк, а полный список объектов `{code, allowed, reason_code?}`.
 Фронтенд показывает и блокирует кнопки по этим данным, но backend повторно проверяет права при каждой
@@ -89,8 +92,8 @@ HTTP-контекста; доменные модули и PostgreSQL-репоз�
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
-| `PUT /api/v1/initiatives/{id}/my-vote` | Создать или изменить голос текущего подтверждённого собственника; вес копируется из снимка | Нет, БД не готова | `PollVote`, `Initiative`, `Membership`, `OwnerRecord` | `PollVote` и `Initiative` отсутствуют |
-| `GET /api/v1/initiatives/{id}/poll` | Прогресс «за/против» в м² и достижение порога 10% | Нет, БД не готова | `PollVote`, `Initiative`, `RegistryUpload` | `PollVote` и `Initiative` отсутствуют |
+| `PUT /api/v1/initiatives/{id}/my-vote` | Создать или изменить голос текущего подтверждённого собственника; вес копируется из снимка | Нет, БД готова | `PollVote`, `Initiative`, `Membership`, `OwnerRecord` | Готовы |
+| `GET /api/v1/initiatives/{id}/poll` | Прогресс «за/против» в м² и достижение порога 10% | Нет, БД готова | `PollVote`, `Initiative`, `RegistryUpload` | Готовы |
 
 Если у пользователя несколько подтверждённых объектов собственности в доме, один пользовательский
 выбор применяется к каждому доступному `Owner`, а в БД создаётся отдельный `PollVote` на каждого
@@ -100,32 +103,35 @@ HTTP-контекста; доменные модули и PostgreSQL-репоз�
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
-| `POST /api/v1/initiatives/{id}/demand` | После достижения 10% выбрать путь A и создать требование | Нет, БД не готова | `Initiative`, `Demand`, `PollVote` | Отсутствуют |
-| `POST /api/v1/demands/{id}/mark-delivered` | Отметить передачу требования и рассчитать срок УК 45 дней | Нет, БД не готова | `Demand`, `AuditLog`, очередь задач | Отсутствуют |
-| `GET /api/v1/orgs/{orgID}/demands` | Входящие требования в кабинете УК | Нет, БД не готова | `OrgMember`, `Demand`, `Initiative` | `OrgMember` готова, остальные отсутствуют |
+| `POST /api/v1/initiatives/{id}/demand` | После достижения 10% выбрать путь A и создать требование | Нет, БД готова | `Initiative`, `Demand`, `PollVote` | Готовы |
+| `POST /api/v1/demands/{id}/mark-delivered` | Отметить передачу требования и рассчитать срок УК 45 дней | Нет, БД готова | `Demand`, `AuditLog`, очередь задач | Доменные таблицы готовы; служебные таблицы создаст библиотека очереди |
+| `GET /api/v1/orgs/{orgID}/demands` | Входящие требования в кабинете УК | Нет, БД готова | `OrgMember`, `Demand`, `Initiative` | Готовы |
 
 ## Собрание, бюллетени и итог
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
-| `POST /api/v1/initiatives/{id}/meetings` | Создать собрание: сотрудником УК на пути A или инициатором на пути B | Нет, БД не готова | `Meeting`, `Initiative`, `AgendaItem`, `Ballot` | Отсутствуют |
-| `GET /api/v1/meetings/{id}` | Данные собрания, сроки, статус и агрегированный прогресс | Нет, БД не готова | `Meeting`, `AgendaItem`, `Ballot` | Отсутствуют |
-| `GET /api/v1/meetings/{id}/tracker` | Трекер «голосовал/нет» с ограничением данных по роли | Нет, БД не готова | `Meeting`, `Ballot`, `Premise`, `Owner` | `Meeting` и `Ballot` отсутствуют |
-| `POST /api/v1/meetings/{id}/ballots/receive` | Найти бюллетень по QR или помещению и отметить получение | Нет, БД не готова | `Meeting`, `Ballot` | Отсутствуют |
-| `PUT /api/v1/ballots/{id}/decisions` | После окончания голосования внести решения бумажного бюллетеня | Нет, БД не готова | `Ballot`, `BallotDecision`, `AgendaItem` | Отсутствуют |
-| `PUT /api/v1/meetings/{id}/gis-results` | Вручную внести официальные агрегированные результаты ГИС ЖКХ | Нет, БД не готова | `Meeting`, `GisResultEntry`, `AgendaItem` | Отсутствуют |
-| `GET /api/v1/meetings/{id}/result-preview` | Рассчитать предварительный кворум и результат без фиксации | Нет, БД не готова | `Meeting`, `BallotDecision`, `GisResultEntry`, `AgendaItem`, `DecisionType` | Отсутствуют |
-| `POST /api/v1/meetings/{id}/finalize` | Один раз записать официальный итог по каждому вопросу | Нет, БД не готова | `Meeting`, `MeetingResult`, официальные источники результата, `AuditLog` | Отсутствуют |
-| `POST /api/v1/meetings/{id}/cancel` | Выполнить допустимый переход отмены с обязательной причиной | Нет, БД не готова | `Meeting`, `Initiative`, `AuditLog` | Отсутствуют |
+| `POST /api/v1/initiatives/{id}/meetings` | Создать собрание: сотрудником УК на пути A или инициатором на пути B | Нет, БД готова | `Meeting`, `Initiative`, `AgendaItem`, `Ballot` | Готовы |
+| `GET /api/v1/meetings/{id}` | Данные собрания, сроки, статус и агрегированный прогресс | Нет, БД готова | `Meeting`, `AgendaItem`, `Ballot` | Готовы |
+| `GET /api/v1/meetings/{id}/tracker` | Трекер «голосовал/нет» с ограничением данных по роли | Нет, БД готова | `Meeting`, `Ballot`, `Premise`, `Owner` | Готовы |
+| `PUT /api/v1/meetings/{id}/my-online-status` | Поставить или снять отметку «уже проголосовал онлайн» со слов собственника | Нет, БД готова | `Meeting`, `Ballot`, `Membership` | Статус и время отметки есть в `Ballot` |
+| `GET /api/v1/meetings/{id}/my-ballots` | Получить бумажные бюллетени доступных собственников | Нет, БД готова | `Meeting`, `Ballot`, `Membership`, `Owner` | Готовы |
+| `POST /api/v1/meetings/{id}/ballots/receive` | Найти бюллетень по QR или помещению и отметить получение | Нет, БД готова | `Meeting`, `Ballot` | Готовы |
+| `PUT /api/v1/ballots/{id}/decisions` | После окончания голосования внести решения бумажного бюллетеня | Нет, БД готова | `Ballot`, `BallotDecision`, `AgendaItem` | Готовы |
+| `PUT /api/v1/meetings/{id}/gis-results` | Вручную внести официальные агрегированные результаты ГИС ЖКХ | Нет, БД готова | `Meeting`, `GisResultEntry`, `AgendaItem` | Готовы |
+| `GET /api/v1/meetings/{id}/result-preview` | Рассчитать предварительный кворум и результат без фиксации | Нет, БД готова | `Meeting`, `BallotDecision`, `GisResultEntry`, `AgendaItem`, `DecisionType` | Готовы |
+| `POST /api/v1/meetings/{id}/finalize` | Один раз записать официальный итог по каждому вопросу | Нет, БД готова | `Meeting`, `MeetingResult`, официальные источники результата, `AuditLog` | Готовы |
+| `POST /api/v1/meetings/{id}/cancel` | Выполнить допустимый переход отмены с обязательной причиной | Нет, БД готова | `Meeting`, `Initiative`, `AuditLog` | Готовы |
 
 ## Документы
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
-| `GET /api/v1/demands/{id}/pdf` | Сгенерировать требование в УК | Нет | `Demand`, `Initiative`, `OwnerRecord` | Доменные таблицы требования отсутствуют; `Document` не нужен |
-| `GET /api/v1/meetings/{id}/notice.pdf` | Сгенерировать сообщение о проведении ОСС | Нет | `Meeting`, `AgendaItem` | Отсутствуют; `Document` не нужен |
-| `GET /api/v1/meetings/{id}/ballots.zip` | Сгенерировать персональные бюллетени с QR | Нет | `Meeting`, `Ballot`, `AgendaItem`, `OwnerRecord` | Таблицы собрания отсутствуют; `Document` не нужен |
-| `GET /api/v1/meetings/{id}/protocol.pdf` | Сгенерировать протокол только из зафиксированных итогов | Нет | `Meeting`, `MeetingResult`, `AgendaItem` | Отсутствуют; `Document` не нужен |
+| `GET /api/v1/demands/{id}/pdf` | Сгенерировать требование в УК | Нет, БД готова | `Demand`, `Initiative`, `OwnerRecord` | Готовы; `Document` не нужен |
+| `GET /api/v1/ballots/{id}/pdf` | Скачать один бюллетень доступного собственника | Нет, БД готова | `Ballot`, `Meeting`, `AgendaItem`, `OwnerRecord` | Готовы; `Document` не нужен |
+| `GET /api/v1/meetings/{id}/notice.pdf` | Сгенерировать сообщение о проведении ОСС | Нет, БД готова | `Meeting`, `AgendaItem` | Готовы; `Document` не нужен |
+| `GET /api/v1/meetings/{id}/ballots.zip` | Сгенерировать персональные бюллетени с QR | Нет, БД готова | `Meeting`, `Ballot`, `AgendaItem`, `OwnerRecord` | Готовы; `Document` не нужен |
+| `GET /api/v1/meetings/{id}/protocol.pdf` | Сгенерировать протокол только из зафиксированных итогов | Нет, БД готова | `Meeting`, `MeetingResult`, `AgendaItem` | Готовы; `Document` не нужен |
 
 В MVP документы генерируются по запросу. Таблица `Document` сознательно отложена на этап после MVP.
 
@@ -136,8 +142,10 @@ HTTP-контекста; доменные модули и PostgreSQL-репоз�
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
+| `GET /api/v1/orgs` | Список доступных пользователю управляющих организаций | Нет, БД готова | `Organization`, `OrgMember` | Готовы |
+| `GET /api/v1/orgs/{orgID}/houses` | Список домов управляющей организации | Нет, БД готова | `Organization`, `OrgMember`, `House` | Готовы |
 | `POST /api/v1/orgs/{orgID}/houses` | Подключить новый дом к УК | Нет, БД готова | `Organization`, `OrgMember`, `House` | Готовы |
-| `POST /api/v1/houses/{id}/registry-uploads` | Загрузить CSV и создать версию в статусе предпросмотра | Нет, БД готова | `RegistryUpload`, `Premise`, `Owner`, `OwnerRecord` | Готовы, но импортёр CSV отсутствует |
+| `POST /api/v1/houses/{houseID}/registry-uploads` | Загрузить CSV и создать версию в статусе предпросмотра | Нет, БД готова | `RegistryUpload`, `Premise`, `Owner`, `OwnerRecord` | Готовы, но импортёр CSV отсутствует |
 | `GET /api/v1/registry-uploads/{id}` | Получить отчёт сопоставления и сверку площадей | Нет, БД готова | `RegistryUpload` | Готова |
 | `POST /api/v1/registry-uploads/{id}/apply` | Применить версию, обновить текущий реестр и пересмотреть привязки | **Частично** | `RegistryUpload`, `House`, `Membership` | Таблицы и внутренняя функция применения есть, HTTP-сценария нет |
 
@@ -158,16 +166,17 @@ HTTP-обработчики. Сам bot loop пока не реализован.
 
 ## Сводка по модели БД
 
-Сейчас созданы 9 таблиц:
+Созданы все 23 доменные таблицы MVP. Каждая таблица находится в отдельной последовательной
+goose-миграции с собственными секциями `Up` и `Down`:
 
-`organizations`, `houses`, `premises`, `registry_uploads`, `owners`, `owner_records`, `users`,
-`memberships`, `org_members`.
+`organizations`, `users`, `houses`, `premises`, `registry_uploads`, `owners`, `owner_records`,
+`memberships`, `org_members`, `decision_types`, `templates`, `template_items`, `initiatives`,
+`agenda_items`, `poll_votes`, `demands`, `meetings`, `ballots`, `ballot_decisions`,
+`gis_result_entries`, `meeting_results`, `audit_logs`, `registry_correction_requests`.
 
-Для полного MVP по согласованной модели ещё нужны 13 доменных таблиц:
-
-`decision_types`, `templates`, `template_items`, `initiatives`, `agenda_items`, `poll_votes`,
-`demands`, `meetings`, `ballots`, `ballot_decisions`, `gis_result_entries`, `meeting_results`,
-`audit_logs`.
+Набор миграций переписан до первого деплоя. Если локальная база уже применяла старую монолитную
+`00001_registry_access.sql`, её нужно пересоздать; для развёрнутой среды такое переписывание истории
+миграций недопустимо.
 
 Кроме них появятся служебные таблицы выбранной библиотеки PostgreSQL-очереди. Они не считаются
 доменными сущностями. Таблицы `documents` и `outgoing_messages` в MVP не нужны.

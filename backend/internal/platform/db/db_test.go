@@ -37,6 +37,22 @@ func TestMigrateAndInvariants(t *testing.T) {
 		t.Fatalf("second migrate: %v", err)
 	}
 
+	for _, table := range []string{
+		"organizations", "users", "houses", "premises", "registry_uploads", "owners",
+		"owner_records", "memberships", "org_members", "decision_types", "templates",
+		"template_items", "initiatives", "agenda_items", "poll_votes", "demands",
+		"meetings", "ballots", "ballot_decisions", "gis_result_entries", "meeting_results",
+		"audit_logs", "registry_correction_requests",
+	} {
+		var exists bool
+		if err := pool.QueryRow(ctx, `SELECT to_regclass('public.' || $1) IS NOT NULL`, table).Scan(&exists); err != nil {
+			t.Fatalf("check table %s: %v", table, err)
+		}
+		if !exists {
+			t.Fatalf("table %s was not created", table)
+		}
+	}
+
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
