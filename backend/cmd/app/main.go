@@ -77,10 +77,11 @@ func run() error {
 			Log:      log,
 			Now:      time.Now,
 		},
-		Houses:  houses,
-		DB:      pool,
-		Log:     log,
-		DevMode: cfg.DevMode,
+		Houses:   houses,
+		Profiles: users,
+		DB:       pool,
+		Log:      log,
+		DevMode:  cfg.DevMode,
 	})
 
 	srv := &http.Server{

@@ -89,6 +89,47 @@ func (fakeHouses) HouseBySlug(_ context.Context, slug string) (registry.HouseSum
 	}, nil
 }
 
+type fakeProfiles struct{}
+
+func (fakeProfiles) MembershipsByUser(_ context.Context, userID string) ([]access.MembershipSummary, error) {
+	method := "demo"
+	area := int64(5230)
+	return []access.MembershipSummary{{
+		ID: "membership-1", Role: "owner", Status: "verified", Method: &method,
+		House:   access.HouseRef{ID: "house-demo", InviteSlug: "demo-slug", Address: "демо", IsDemo: true},
+		Premise: access.PremiseRef{ID: "premise-45", Number: "45", Kind: "residential", DisplayAreaCenti: &area},
+		Owner: &access.OwnerSummary{
+			ID: "owner-1", PremiseID: "premise-45", PremiseNumber: "45", MaskedName: "Иванов И. И.",
+			Kind: "person", ShareNum: 1, ShareDen: 2, WeightNum: 5230, WeightDen: 2,
+		},
+	}}, nil
+}
+
+func (fakeProfiles) PremiseOwners(_ context.Context, _, premiseID string) ([]access.OwnerSummary, error) {
+	switch premiseID {
+	case "missing":
+		return nil, access.ErrNotFound
+	case "forbidden":
+		return nil, access.ErrForbidden
+	}
+
+	return []access.OwnerSummary{{
+		ID: "owner-1", PremiseID: premiseID, PremiseNumber: "45", MaskedName: "Иванов И. И.",
+		Kind: "person", ShareNum: 1, ShareDen: 2, WeightNum: 5230, WeightDen: 2,
+	}}, nil
+}
+
+func (fakeProfiles) HouseOfficerCandidates(_ context.Context, _, houseID string) ([]access.OwnerSummary, error) {
+	if houseID == "forbidden" {
+		return nil, access.ErrForbidden
+	}
+
+	return []access.OwnerSummary{{
+		ID: "owner-1", PremiseID: "premise-45", PremiseNumber: "45", MaskedName: "Иванов И. И.",
+		Kind: "person", ShareNum: 1, ShareDen: 2, WeightNum: 5230, WeightDen: 2,
+	}}, nil
+}
+
 type fakeReadiness struct{ err error }
 
 func (f fakeReadiness) Ping(context.Context) error { return f.err }
@@ -106,7 +147,8 @@ func newTestServerWithReadiness(devMode bool, readinessErr error) (http.Handler,
 	}
 
 	return NewHandler(Deps{
-		Auth: auth, Houses: fakeHouses{}, DB: fakeReadiness{err: readinessErr}, Log: log, DevMode: devMode,
+		Auth: auth, Houses: fakeHouses{}, Profiles: fakeProfiles{},
+		DB: fakeReadiness{err: readinessErr}, Log: log, DevMode: devMode,
 	}), users
 }
 
@@ -134,8 +176,9 @@ func TestMeWithValidInitData(t *testing.T) {
 	}
 
 	var resp struct {
-		User  meUser     `json:"user"`
-		House *houseJSON `json:"house"`
+		User        meUser           `json:"user"`
+		House       *houseJSON       `json:"house"`
+		Memberships []membershipJSON `json:"memberships"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
@@ -145,6 +188,10 @@ func TestMeWithValidInitData(t *testing.T) {
 	}
 	if resp.House == nil || resp.House.ID != "house-demo" || resp.House.Thresholds == nil {
 		t.Fatalf("house by start_param expected, got %s", rec.Body)
+	}
+	if len(resp.Memberships) != 1 || resp.Memberships[0].Role != "owner" ||
+		resp.Memberships[0].Owner == nil || resp.Memberships[0].Owner.WeightM2 != "26.15" {
+		t.Fatalf("membership with owner weight expected, got %s", rec.Body)
 	}
 	if *resp.House.TotalAreaM2 != "3000.00" || resp.House.Thresholds.DemandM2 != "300.00" ||
 		resp.House.Thresholds.QuorumAboveM2 != "1500.00" || resp.House.Thresholds.TwoThirdsM2 != "2000.00" {
@@ -221,5 +268,31 @@ func TestReadyzIsPublic(t *testing.T) {
 	h, _ = newTestServerWithReadiness(false, errors.New("database unavailable"))
 	if rec := do(h, "/api/v1/readyz", nil); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("not ready status = %d, want 503", rec.Code)
+	}
+}
+
+func TestPremiseOwners(t *testing.T) {
+	h, _ := newTestServer(true)
+	headers := map[string]string{HeaderDevUserID: "7"}
+
+	rec := do(h, "/api/v1/premises/premise-45/owners", headers)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"masked_name":"Иванов И. И."`) ||
+		!strings.Contains(rec.Body.String(), `"weight_m2":"26.15"`) {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	}
+
+	if rec := do(h, "/api/v1/premises/forbidden/owners", headers); rec.Code != http.StatusForbidden {
+		t.Fatalf("forbidden status = %d, want 403; body = %s", rec.Code, rec.Body)
+	}
+	if rec := do(h, "/api/v1/premises/missing/owners", headers); rec.Code != http.StatusNotFound {
+		t.Fatalf("missing status = %d, want 404; body = %s", rec.Code, rec.Body)
+	}
+}
+
+func TestMeetingOfficerCandidates(t *testing.T) {
+	h, _ := newTestServer(true)
+	rec := do(h, "/api/v1/houses/house-demo/meeting-officer-candidates", map[string]string{HeaderDevUserID: "7"})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"premise":{"id":"premise-45","number":"45"}`) {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
 }

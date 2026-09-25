@@ -74,12 +74,43 @@
       "quorum_above_m2": "1500.00",
       "two_thirds_m2": "2000.00"
     }
-  }
+  },
+  "memberships": [
+    {
+      "id": "0199...",
+      "role": "owner",
+      "status": "verified",
+      "method": "demo",
+      "house": {
+        "id": "0199...",
+        "slug": "demo-house",
+        "address": "г. Казань, ул. Демонстрационная, д. 1 (демо-дом)",
+        "region": "Республика Татарстан",
+        "is_demo": true
+      },
+      "premise": {
+        "id": "0199...",
+        "number": "45",
+        "kind": "residential",
+        "entrance": 3,
+        "floor": 2,
+        "display_area_m2": "52.30"
+      },
+      "owner": {
+        "id": "0199...",
+        "masked_name": "Иванов И. И.",
+        "kind": "person",
+        "share": {"numerator": 1, "denominator": 2},
+        "weight_m2": "26.15"
+      }
+    }
+  ]
 }
 ```
 
 Если приложение открыто без ссылки дома, поле `house` равно `null`. При неверном или устаревшем
-`initData` возвращается `401 Unauthorized`.
+`initData` возвращается `401 Unauthorized`. `memberships` всегда является массивом. Для привязки без
+выбранного собственника поле `owner` равно `null`, а до подтверждения `method` может быть `null`.
 
 ## `GET /api/v1/houses/{slug}`
 
@@ -113,15 +144,93 @@
 
 Если дом не найден, возвращается `404 Not Found` с кодом ошибки `house_not_found`.
 
+## `GET /api/v1/premises/{premiseID}/owners`
+
+Возвращает собственников помещения из текущей версии реестра. Нужен для выбора `owner_id` перед
+`request-owner-verification`. Полное ФИО и телефон не возвращаются.
+
+Доступ разрешён пользователю с ожидающей или подтверждённой привязкой к этому помещению, а также
+сотруднику управляющей организации дома.
+
+**Request body:** отсутствует.
+
+**Response `200 OK`:**
+
+```json
+{
+  "owners": [
+    {
+      "id": "0199...",
+      "masked_name": "Иванов И. И.",
+      "kind": "person",
+      "share": {"numerator": 1, "denominator": 2},
+      "weight_m2": "26.15"
+    }
+  ]
+}
+```
+
+Возвращает `403 forbidden` без подходящей привязки и `404 premise_not_found`, если помещения нет.
+
+## `GET /api/v1/houses/{houseID}/meeting-officer-candidates`
+
+Возвращает замаскированный список собственников дома для выбора председателя и секретаря собрания.
+Доступ разрешён подтверждённому собственнику этого дома или сотруднику его управляющей организации.
+
+**Request body:** отсутствует.
+
+**Response `200 OK`:**
+
+```json
+{
+  "owners": [
+    {
+      "id": "0199...",
+      "masked_name": "Иванов И. И.",
+      "kind": "person",
+      "share": {"numerator": 1, "denominator": 2},
+      "weight_m2": "26.15",
+      "premise": {"id": "0199...", "number": "45"}
+    }
+  ]
+}
+```
+
+Возвращает `403 forbidden` без требуемой роли и `404 house_not_found`, если дома нет.
+
 ---
 
 ## Минимальный API сквозного MVP
 
 Маршруты ниже ещё не реализованы. Они составляют минимальный контракт для сценария
-«привязка к дому → инициатива → опрос → требование в УК → собрание → итог».
+«привязка к дому → инициатива → опрос → выбор пути A/B → собрание → итог».
 
 В документах идея жителя называется `Initiative`, поэтому API использует `/initiatives`, а не
 `/issues`. Отдельная заявка в УК с фотографией (`IssueReport`) находится вне текущего MVP.
+
+### Иерархия опроса, выбора пути и официального голосования
+
+```text
+Инициатива
+└─ предварительный опрос внутри MAX-приложения (PollVote, юридической силы нет)
+   ├─ путь A: поддержка ≥ 10%
+   │  └─ требование в УК → УК создаёт собрание
+   │     └─ если УК просрочила 45 дней → инициатор может перейти на путь B
+   └─ путь B: самостоятельная организация без УК
+      └─ инициатор создаёт собрание
+
+Собрание
+├─ онлайн в ГИС ЖКХ
+│  ├─ собственник отмечает у нас «я проголосовал» — только для трекера
+│  └─ официальный итог переносится из ГИС агрегированными значениями
+└─ бумажный бюллетень — альтернативный канал
+   └─ решения переносятся в систему после завершения голосования
+```
+
+`PUT /initiatives/{id}/my-vote` — голос в предварительном опросе нашего приложения. Он не является
+официальным голосом ОСС. В основном онлайн-сценарии официальный голос собственник отдаёт в ГИС ЖКХ,
+а наше приложение только помогает организовать процесс и показывает трекер. Отметка «проголосовал
+онлайн» не содержит варианта голоса и никогда не участвует в подсчёте результата.
 
 ### `GET /api/v1/houses/{houseID}/premises?number={number}`
 
@@ -168,7 +277,44 @@
 
 **Request body:** отсутствует.
 
-**Response `200 OK`:** `{code, name, version, params_schema, agenda_items}`.
+**Response `200 OK`:**
+
+```json
+{
+  "code": "video_surveillance",
+  "name": "Видеонаблюдение",
+  "version": 1,
+  "params_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["camera_count", "payment_method"],
+    "properties": {
+      "camera_count": {
+        "type": "integer",
+        "title": "Количество камер",
+        "minimum": 1,
+        "maximum": 1000
+      },
+      "payment_method": {
+        "type": "string",
+        "title": "Способ оплаты",
+        "enum": ["management_bill", "special_assessment"]
+      }
+    }
+  },
+  "ui_schema": {
+    "order": ["camera_count", "payment_method"],
+    "widgets": {"payment_method": "select"}
+  },
+  "agenda_items": []
+}
+```
+
+`params_schema` — JSON Schema Draft 2020-12. В MVP фронтенд обязан поддержать `string`, `integer`,
+`number`, `boolean`, `enum`, `required`, `minimum`, `maximum`, `minLength` и `maxLength`.
+`ui_schema` влияет только на отображение и не участвует в серверной валидации. Значения `params` при
+создании или изменении инициативы сервер валидирует по `params_schema` сохранённой версии шаблона.
 
 ### `GET /api/v1/houses/{houseID}/initiatives`
 
@@ -205,7 +351,36 @@
 
 **Request body:** отсутствует.
 
-**Response `200 OK`:** `{id, title, description, stage, path, agenda_items, thresholds, allowed_actions}`.
+**Response `200 OK`:**
+
+```json
+{
+  "id": "0199...",
+  "title": "Камеры в подъездах",
+  "description": "Установить камеры во всех подъездах",
+  "stage": "poll",
+  "path": null,
+  "agenda_items": [],
+  "thresholds": {},
+  "allowed_actions": [
+    {"code": "edit", "allowed": false, "reason_code": "poll_already_started"},
+    {"code": "start_poll", "allowed": false, "reason_code": "poll_already_started"},
+    {"code": "cast_poll_vote", "allowed": true},
+    {"code": "select_path_a", "allowed": false, "reason_code": "support_not_reached"},
+    {"code": "select_path_b", "allowed": true},
+    {"code": "create_meeting", "allowed": false, "reason_code": "path_not_selected"},
+    {"code": "cancel", "allowed": true}
+  ]
+}
+```
+
+`allowed_actions` всегда содержит все известные клиенту действия. Фронтенд определяет состояние
+кнопки только по `code` и `allowed`; отображаемый текст локализуется на фронтенде. `reason_code` —
+необязательный стабильный машинный код причины запрета. Допустимые коды действий:
+`edit`, `start_poll`, `cast_poll_vote`, `select_path_a`, `select_path_b`, `create_meeting`, `cancel`.
+Первоначальные коды причин: `owner_verification_required`, `not_initiator`, `wrong_stage`,
+`poll_already_started`, `poll_not_finished`, `support_not_reached`, `path_not_selected`,
+`active_meeting_exists`. Сервер всё равно повторно проверяет право при выполнении действия.
 
 ### `POST /api/v1/initiatives/{id}/start-poll`
 
@@ -246,6 +421,56 @@
 **Request body:** отсутствует.
 
 **Response `200 OK`:** `{for_m2, against_m2, total_m2, demand_m2, demand_reached, poll_ends_at}`.
+
+## Ветвление после предварительного опроса
+
+### Путь A — через УК
+
+Путь A выбирается созданием требования через `POST /api/v1/initiatives/{id}/demand`. Он доступен
+при поддержке не менее 10%. После передачи требования УК получает 45 дней на создание собрания.
+
+### Путь B — самостоятельная организация без УК
+
+Путь B не создаёт `Demand`: инициатор берёт организацию собрания на себя, после чего вызывает
+`POST /api/v1/initiatives/{id}/meetings`.
+
+```text
+предварительный опрос завершён
+└─ POST /initiatives/{id}/self-organize
+   └─ Initiative.path = B
+      └─ выбор председателя и секретаря
+         └─ POST /initiatives/{id}/meetings
+            ├─ публикация уведомления о собрании
+            ├─ собственники голосуют онлайн в ГИС ЖКХ
+            ├─ инициатор переносит агрегаты через PUT /meetings/{id}/gis-results
+            └─ POST /meetings/{id}/finalize → официальный итог
+```
+
+На пути B инициатор становится администратором собрания. УК не создаёт собрание и не получает право
+изменять его данные только на основании управления домом.
+
+### `POST /api/v1/initiatives/{id}/self-organize`
+
+Выбирает путь B. Ручку вызывает подтверждённый собственник — инициатор. Она доступна после завершения
+предварительного опроса либо после просрочки требования на пути A, если активное собрание ещё не создано.
+
+**Request body:** отсутствует.
+
+**Response `200 OK`:**
+
+```json
+{
+  "initiative_id": "0199...",
+  "stage": "poll",
+  "path": "B",
+  "allowed_actions": [
+    {"code": "create_meeting", "allowed": true}
+  ]
+}
+```
+
+Операция идемпотентна. Если путь B уже выбран, сервер возвращает текущее состояние. Если УК уже
+создала активное собрание, возвращается `409 active_meeting_exists`.
 
 ### `POST /api/v1/initiatives/{id}/demand`
 
@@ -345,6 +570,75 @@
 **Request body:** отсутствует.
 
 **Response `200 OK`:** `{summary, premises}` без раскрытия конкретного варианта чужого голоса.
+
+### `PUT /api/v1/meetings/{id}/my-online-status`
+
+Позволяет собственнику отметить, что он уже проголосовал онлайн в ГИС ЖКХ. Это статус «со слов» для
+трекера и отключения напоминаний, а не официальный голос. Конкретные решения пользователя по вопросам
+повестки backend не принимает и не возвращает.
+
+Если у пользователя несколько объектов собственности, он явно передаёт те записи собственников,
+по которым проголосовал.
+
+**Request body:**
+
+```json
+{
+  "owner_ids": ["0199..."],
+  "voted": true
+}
+```
+
+**Response `200 OK`:**
+
+```json
+{
+  "meeting_id": "0199...",
+  "ballots": [
+    {
+      "owner_id": "0199...",
+      "status": "online_declared",
+      "declared_at": "2026-10-20T15:30:00+03:00"
+    }
+  ]
+}
+```
+
+`voted: false` снимает отметку до окончания голосования. После окончания собрания ручка возвращает
+`409 voting_finished`. Официальные результаты онлайн-голосования появляются только через
+`PUT /api/v1/meetings/{id}/gis-results`.
+
+### `GET /api/v1/meetings/{id}/my-ballots`
+
+Возвращает бумажные бюллетени текущего пользователя, по одному на каждого доступного ему собственника.
+Для собрания только в форме `gis_electronic` возвращает пустой массив.
+
+**Request body:** отсутствует.
+
+**Response `200 OK`:**
+
+```json
+{
+  "ballots": [
+    {
+      "id": "0199...",
+      "owner_id": "0199...",
+      "premise": {"id": "0199...", "number": "45"},
+      "status": "not_voted",
+      "download_url": "/api/v1/ballots/0199.../pdf"
+    }
+  ]
+}
+```
+
+### `GET /api/v1/ballots/{id}/pdf`
+
+Генерирует один бумажный бюллетень. Доступ разрешён только пользователю с подтверждённой привязкой к
+собственнику этого бюллетеня либо администратору собрания.
+
+**Request body:** отсутствует.
+
+**Response `200 OK`:** PDF, `Content-Type: application/pdf`.
 
 ### `POST /api/v1/meetings/{id}/ballots/receive`
 
@@ -492,6 +786,35 @@
 **Request body:** `{owner_id: "0199..."}`.
 
 **Response `202 Accepted`:** `{membership_id, status: "pending", method: "uk_manual"}`.
+
+### `POST /api/v1/memberships/{id}/data-correction-requests`
+
+Создаёт обращение «Данные неверны» по привязке пользователя. Backend сам фиксирует пользователя,
+помещение, дом и текущую версию реестра, поэтому подменить их в теле запроса нельзя.
+
+**Request body:**
+
+```json
+{
+  "reason": "wrong_share",
+  "comment": "В реестре указана доля 1/2, должна быть 1/1"
+}
+```
+
+`reason` принимает `wrong_name`, `wrong_share`, `wrong_area`, `wrong_premise` или `other`.
+
+**Response `201 Created`:**
+
+```json
+{
+  "id": "0199...",
+  "membership_id": "0199...",
+  "status": "pending",
+  "created_at": "2026-10-01T12:00:00+03:00"
+}
+```
+
+Для реализации потребуется сущность `RegistryCorrectionRequest` и список таких обращений в кабинете УК.
 
 ### `GET /api/v1/orgs/{orgID}/verification-requests`
 

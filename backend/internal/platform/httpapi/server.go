@@ -28,16 +28,17 @@ type Readiness interface {
 
 // Deps are the dependencies of the API.
 type Deps struct {
-	Auth    *Authenticator
-	Houses  Houses
-	DB      Readiness
-	Log     *slog.Logger
-	DevMode bool
+	Auth     *Authenticator
+	Houses   Houses
+	Profiles Profiles
+	DB       Readiness
+	Log      *slog.Logger
+	DevMode  bool
 }
 
 // NewHandler builds the router of the API.
 func NewHandler(d Deps) http.Handler {
-	h := &handlers{houses: d.Houses, db: d.DB, log: d.Log, devMode: d.DevMode}
+	h := &handlers{houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode}
 
 	// Application logs are emitted through slog; Gin's debug route dump would
 	// otherwise mix plain text into the JSON log stream.
@@ -59,16 +60,19 @@ func NewHandler(d Deps) http.Handler {
 	protected := api.Group("")
 	protected.Use(d.Auth.Middleware())
 	protected.GET("/me", h.me)
-	protected.GET("/houses/:slug", h.house)
+	protected.GET("/houses/:house", h.house)
+	protected.GET("/premises/:premiseID/owners", h.premiseOwners)
+	protected.GET("/houses/:house/meeting-officer-candidates", h.meetingOfficerCandidates)
 
 	return router
 }
 
 type handlers struct {
-	houses  Houses
-	db      Readiness
-	log     *slog.Logger
-	devMode bool
+	houses   Houses
+	profiles Profiles
+	db       Readiness
+	log      *slog.Logger
+	devMode  bool
 }
 
 func (h *handlers) healthz(c *gin.Context) {
@@ -95,9 +99,10 @@ func (h *handlers) readyz(c *gin.Context) {
 }
 
 type meResponse struct {
-	User    meUser     `json:"user"`
-	DevMode bool       `json:"dev_mode"`
-	House   *houseJSON `json:"house"`
+	User        meUser           `json:"user"`
+	DevMode     bool             `json:"dev_mode"`
+	House       *houseJSON       `json:"house"`
+	Memberships []membershipJSON `json:"memberships"`
 }
 
 type meUser struct {
@@ -117,8 +122,20 @@ func (h *handlers) me(c *gin.Context) {
 		return
 	}
 	resp := meResponse{
-		User:    meUser{ID: id.UserID, FirstName: id.FirstName},
-		DevMode: h.devMode,
+		User:        meUser{ID: id.UserID, FirstName: id.FirstName},
+		DevMode:     h.devMode,
+		Memberships: make([]membershipJSON, 0),
+	}
+
+	memberships, err := h.profiles.MembershipsByUser(c.Request.Context(), id.UserID)
+	if err != nil {
+		h.log.Error("list my memberships", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить привязки, попробуйте ещё раз")
+
+		return
+	}
+	for _, membership := range memberships {
+		resp.Memberships = append(resp.Memberships, toMembershipJSON(membership))
 	}
 
 	if id.StartParam != "" {
@@ -139,7 +156,7 @@ func (h *handlers) me(c *gin.Context) {
 }
 
 func (h *handlers) house(c *gin.Context) {
-	house, err := h.houses.HouseBySlug(c.Request.Context(), c.Param("slug"))
+	house, err := h.houses.HouseBySlug(c.Request.Context(), c.Param("house"))
 	switch {
 	case errors.Is(err, registry.ErrNotFound):
 		writeError(c, http.StatusNotFound, "house_not_found", "Дом не найден. Проверьте ссылку от управляющей компании")
