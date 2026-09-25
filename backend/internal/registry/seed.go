@@ -26,7 +26,7 @@ const (
 // the later ones find the house. The unique index houses_one_demo backs this up in the schema.
 func (s *Store) SeedDemo(ctx context.Context, hasher *security.Hasher, slug string, log *slog.Logger) (string, error) {
 	var result string
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+	err := s.tx.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext('registry.seed_demo'))`); err != nil {
 			return err
 		}

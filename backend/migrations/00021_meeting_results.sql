@@ -22,5 +22,21 @@ CREATE TABLE meeting_results (
     UNIQUE (meeting_id, agenda_item_id)
 );
 
+-- Итог по вопросу записывается один раз при фиксации и дальше только читается (решение 61):
+-- протокол строится из этих строк, правка задним числом переписала бы историю.
+-- +goose StatementBegin
+CREATE FUNCTION meeting_results_write_once() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION 'meeting_results rows are write-once: % is not allowed', TG_OP
+        USING ERRCODE = 'restrict_violation';
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+CREATE TRIGGER meeting_results_write_once
+    BEFORE UPDATE OR DELETE ON meeting_results
+    FOR EACH ROW EXECUTE FUNCTION meeting_results_write_once();
+
 -- +goose Down
 DROP TABLE meeting_results;
+DROP FUNCTION meeting_results_write_once();

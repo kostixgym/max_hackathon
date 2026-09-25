@@ -9,6 +9,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"maxhackathon/backend/internal/platform/db"
 )
 
 // ErrNotFound is returned when a house does not exist.
@@ -21,11 +23,13 @@ var ErrVersionNotApplied = errors.New("registry version is not applied")
 // Store reads and writes registry data.
 type Store struct {
 	pool *pgxpool.Pool
+	tx   *db.TransactionManager
 }
 
-// NewStore creates a registry store.
+// NewStore creates a registry store. Multi-row operations run through the shared
+// TransactionManager (docs/05, «Правило атомарности»).
 func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+	return &Store{pool: pool, tx: db.NewTransactionManager(pool)}
 }
 
 // HouseSummary is what a user sees about a house before any verification:

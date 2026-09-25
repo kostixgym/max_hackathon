@@ -17,6 +17,10 @@ CREATE TABLE meetings (
     outcome                        text CHECK (outcome IN ('held', 'no_quorum')),
     online_participants_weight_num bigint CHECK (online_participants_weight_num >= 0),
     online_participants_weight_den bigint CHECK (online_participants_weight_den > 0),
+    -- Площадь всех участников (онлайн + учтённые бумажные бюллетени) на момент фиксации итога:
+    -- кворум — юридический факт протокола, пересчитывать его задним числом нельзя.
+    participants_weight_num        bigint CHECK (participants_weight_num >= 0),
+    participants_weight_den        bigint CHECK (participants_weight_den > 0),
     finalized_by_user_id           uuid REFERENCES users (id) ON DELETE SET NULL,
     finalized_at                   timestamptz,
     cancel_reason                  text,
@@ -27,7 +31,9 @@ CREATE TABLE meetings (
     CHECK (voting_starts_at >= notice_at),
     CHECK (voting_ends_at > voting_starts_at),
     CHECK ((online_participants_weight_num IS NULL) = (online_participants_weight_den IS NULL)),
-    CHECK (status <> 'completed' OR (outcome IS NOT NULL AND finalized_at IS NOT NULL))
+    CHECK ((participants_weight_num IS NULL) = (participants_weight_den IS NULL)),
+    CHECK (status <> 'completed' OR (outcome IS NOT NULL AND finalized_at IS NOT NULL
+                                     AND participants_weight_num IS NOT NULL))
 );
 
 CREATE UNIQUE INDEX meetings_one_active_per_initiative

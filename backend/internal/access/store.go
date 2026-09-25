@@ -156,9 +156,12 @@ func (s *Store) MembershipsByUser(ctx context.Context, userID string) ([]Members
 	return result, nil
 }
 
-// PremiseOwners returns owners from the current registry version. A pending or
-// verified member of the premise needs this list to choose their owner record;
-// staff of the house's management organization may also view it.
+// PremiseOwners returns owners from the current registry version. The list is
+// needed to choose one's owner record, so it is shown only to a member whose link
+// to the premise is already confirmed: a verified resident (receipt check), an
+// owner (pending or verified) and staff of the house's management organization.
+// A guest is refused: anyone can claim any flat as a guest, and otherwise could
+// collect surnames and initials of all owners flat by flat (docs/01, «Роли и права»).
 func (s *Store) PremiseOwners(ctx context.Context, userID, premiseID string) ([]OwnerSummary, error) {
 	id, err := parseResourceID(premiseID)
 	if err != nil {
@@ -179,8 +182,10 @@ func (s *Store) PremiseOwners(ctx context.Context, userID, premiseID string) ([]
 }
 
 // HouseOfficerCandidates returns current-registry owners that can be selected
-// as a meeting chair or secretary. Only a verified owner of the house or its
-// management-organization staff may view the house-wide masked directory.
+// as a meeting chair or secretary. The house-wide directory (masked names, flats,
+// shares) is needed only by whoever organizes the meeting: the initiator of an
+// active path-B initiative of the house (a verified owner) and the staff of the
+// house's management organization (path A). Other owners do not see it.
 func (s *Store) HouseOfficerCandidates(ctx context.Context, userID, houseID string) ([]OwnerSummary, error) {
 	id, err := parseResourceID(houseID)
 	if err != nil {
@@ -209,7 +214,8 @@ func (s *Store) premiseOwnerAccess(ctx context.Context, userID string, premiseID
 				SELECT 1
 				FROM memberships m
 				WHERE m.user_id = $1::uuid AND m.premise_id = $2
-				  AND m.status IN ('pending', 'verified')
+				  AND ((m.role IN ('resident', 'owner') AND m.status = 'verified')
+				       OR (m.role = 'owner' AND m.status = 'pending'))
 				UNION ALL
 				SELECT 1
 				FROM org_members om
@@ -231,10 +237,16 @@ func (s *Store) houseOwnerAccess(ctx context.Context, userID string, houseID pgt
 			EXISTS (SELECT 1 FROM houses h WHERE h.id = $2),
 			EXISTS (
 				SELECT 1
-				FROM memberships m
-				JOIN premises p ON p.id = m.premise_id
-				WHERE m.user_id = $1::uuid AND p.house_id = $2
-				  AND m.role = 'owner' AND m.status = 'verified'
+				FROM initiatives i
+				WHERE i.house_id = $2 AND i.initiator_user_id = $1::uuid
+				  AND i.path = 'B' AND i.stage IN ('poll', 'demand', 'meeting')
+				  AND i.hidden_at IS NULL
+				  AND EXISTS (
+				      SELECT 1
+				      FROM memberships m
+				      JOIN premises p ON p.id = m.premise_id
+				      WHERE m.user_id = $1::uuid AND p.house_id = $2
+				        AND m.role = 'owner' AND m.status = 'verified')
 				UNION ALL
 				SELECT 1
 				FROM org_members om
