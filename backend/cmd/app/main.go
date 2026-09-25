@@ -19,6 +19,7 @@ import (
 
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/bot"
+	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/platform/config"
 	"maxhackathon/backend/internal/platform/db"
 	"maxhackathon/backend/internal/platform/httpapi"
@@ -69,8 +70,9 @@ func run() error {
 	}
 
 	hasher := security.NewHasher(cfg.HMACSecret)
+	// Modules read each other's data only through interfaces; the wiring is here.
 	houses := registry.NewStore(pool)
-	users := access.NewStore(pool)
+	users := access.NewStore(pool, houses, initiatives.NewStore(pool))
 
 	if cfg.SeedDemo {
 		slug, err := houses.SeedDemo(ctx, hasher, cfg.DemoInviteSlug, log)

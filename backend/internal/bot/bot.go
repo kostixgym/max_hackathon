@@ -1,6 +1,9 @@
 // Package bot handles chat updates: greets the user and opens the mini-app.
 // The chat is for notifications and short actions; complex screens live in the
 // mini-app (docs/02). Voting buttons and reminders come in stage 1.
+//
+// The bot talks only in private dialogs (decision 44). In a group chat of the house
+// it stays silent, otherwise it would answer every message of the neighbours.
 package bot
 
 import (
@@ -51,7 +54,8 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 		// «Начать» in a new dialog; a deep link max.ru/<bot>?start=<slug> puts the slug into Payload.
 		b.start(ctx, u, u.Payload)
 	case model.UpdateMessageCreated:
-		if u.GetMessage().Sender.IsBot {
+		msg := u.GetMessage()
+		if msg.Sender.IsBot || msg.Recipient.ChatType != model.ChatTypeDialog {
 			return
 		}
 		cmd := u.GetCommand()

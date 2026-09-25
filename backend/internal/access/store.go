@@ -1,17 +1,23 @@
 // Package access is the «Доступ и роли» module: users, memberships (links between
-// a user and a premise) and management company staff.
+// a user and a premise) and management company staff. It decides who may see what.
+// Houses, premises, owners and initiatives belong to other modules and come only
+// through their interfaces (docs/04, principle 8).
 package access
 
 import (
+	"cmp"
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"maxhackathon/backend/internal/registry"
 )
 
 // ErrNotFound means that the requested house or premise does not exist.
@@ -19,6 +25,20 @@ var ErrNotFound = errors.New("not found")
 
 // ErrForbidden means that the user may not view the requested owner directory.
 var ErrForbidden = errors.New("forbidden")
+
+// Registry reads houses, premises and owners (the registry module).
+type Registry interface {
+	House(ctx context.Context, id string) (registry.HouseRef, error)
+	Premises(ctx context.Context, ids []string) ([]registry.Premise, error)
+	PremiseOwners(ctx context.Context, premiseID string) ([]registry.Owner, error)
+	HouseOwners(ctx context.Context, houseID string) ([]registry.Owner, error)
+	Owners(ctx context.Context, ids []string) ([]registry.Owner, error)
+}
+
+// Initiatives answers questions about initiatives (the initiatives module).
+type Initiatives interface {
+	IsPathBInitiator(ctx context.Context, userID, houseID string) (bool, error)
+}
 
 // User is a MAX user known to the service. Name and photo from MAX are not stored.
 type User struct {
@@ -33,28 +53,8 @@ type MembershipSummary struct {
 	Role    string
 	Status  string
 	Method  *string
-	House   HouseRef
-	Premise PremiseRef
+	Premise registry.Premise
 	Owner   *OwnerSummary
-}
-
-// HouseRef is the part of a house needed for a user's membership card.
-type HouseRef struct {
-	ID         string
-	InviteSlug string
-	Address    string
-	Region     string
-	IsDemo     bool
-}
-
-// PremiseRef is the non-personal part of a premise shown to its member.
-type PremiseRef struct {
-	ID               string
-	Number           string
-	Kind             string
-	Entrance         *int
-	Floor            *int
-	DisplayAreaCenti *int64
 }
 
 // OwnerSummary contains only data safe for an authorized directory response.
@@ -71,87 +71,110 @@ type OwnerSummary struct {
 	WeightDen     int64
 }
 
-// Store reads and writes access data.
+// Store reads and writes the tables of the module: users, memberships and org_members.
 type Store struct {
-	pool *pgxpool.Pool
+	pool        *pgxpool.Pool
+	registry    Registry
+	initiatives Initiatives
 }
 
-// NewStore creates an access store.
-func NewStore(pool *pgxpool.Pool) *Store {
-	return &Store{pool: pool}
+// NewStore creates an access store on top of the registry and initiatives modules.
+func NewStore(pool *pgxpool.Pool, reg Registry, initiatives Initiatives) *Store {
+	return &Store{pool: pool, registry: reg, initiatives: initiatives}
 }
 
-// UpsertUser returns the user with the given MAX id, creating it on the first visit.
-func (s *Store) UpsertUser(ctx context.Context, maxUserID int64) (User, error) {
+// EnsureUser returns the user with the given MAX id, creating it on the first visit.
+// It runs on every API request, so a known user costs one indexed read and no write.
+func (s *Store) EnsureUser(ctx context.Context, maxUserID int64) (User, error) {
 	u := User{MaxUserID: maxUserID}
-	err := s.pool.QueryRow(ctx, `
+	err := s.pool.QueryRow(ctx, `SELECT id::text FROM users WHERE max_user_id = $1`, maxUserID).Scan(&u.ID)
+	if err == nil {
+		return u, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return u, fmt.Errorf("find user: %w", err)
+	}
+
+	// The first visit. Parallel first requests of the same user race here: the loser's
+	// insert returns no row and reads the winner's user.
+	err = s.pool.QueryRow(ctx, `
 		INSERT INTO users (max_user_id) VALUES ($1)
-		ON CONFLICT (max_user_id) DO UPDATE SET max_user_id = EXCLUDED.max_user_id
+		ON CONFLICT (max_user_id) DO NOTHING
 		RETURNING id::text`, maxUserID,
 	).Scan(&u.ID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		err = s.pool.QueryRow(ctx, `SELECT id::text FROM users WHERE max_user_id = $1`, maxUserID).Scan(&u.ID)
+	}
 	if err != nil {
-		return u, fmt.Errorf("upsert user: %w", err)
+		return u, fmt.Errorf("create user: %w", err)
 	}
 
 	return u, nil
 }
 
 // MembershipsByUser returns all of the user's non-revoked links together with
-// the house, premise and current owner facts required by the mini-app home page.
+// the premise, its house and the current owner facts required by the mini-app home page.
 func (s *Store) MembershipsByUser(ctx context.Context, userID string) ([]MembershipSummary, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT m.id::text, m.role, m.status, m.method,
-		       h.id::text, h.invite_slug, h.address, h.region, h.is_demo,
-		       p.id::text, p.number, p.kind, p.entrance, p.floor, p.display_area_centi,
-		       o.id::text, r.full_name, r.owner_kind,
-		       r.share_num, r.share_den, r.weight_num, r.weight_den
-		FROM memberships m
-		JOIN premises p ON p.id = m.premise_id
-		JOIN houses h ON h.id = p.house_id
-		LEFT JOIN owners o ON o.id = m.owner_id
-		LEFT JOIN registry_uploads ru
-		       ON ru.house_id = h.id AND ru.version = h.current_registry_version
-		LEFT JOIN owner_records r
-		       ON r.owner_id = o.id AND r.registry_upload_id = ru.id
-		WHERE m.user_id = $1::uuid AND m.status <> 'revoked'
-		ORDER BY h.address, p.number, m.id`, userID)
+	links, err := s.memberships(ctx, userID)
 	if err != nil {
-		return nil, fmt.Errorf("list user memberships: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
+	if len(links) == 0 {
+		return []MembershipSummary{}, nil
+	}
 
-	result := make([]MembershipSummary, 0)
-	for rows.Next() {
-		var item MembershipSummary
-		var method, ownerID, fullName, ownerKind sql.NullString
-		var entrance, floor, displayArea sql.NullInt64
-		var shareNum, shareDen, weightNum, weightDen sql.NullInt64
-		if err := rows.Scan(
-			&item.ID, &item.Role, &item.Status, &method,
-			&item.House.ID, &item.House.InviteSlug, &item.House.Address, &item.House.Region, &item.House.IsDemo,
-			&item.Premise.ID, &item.Premise.Number, &item.Premise.Kind, &entrance, &floor, &displayArea,
-			&ownerID, &fullName, &ownerKind, &shareNum, &shareDen, &weightNum, &weightDen,
-		); err != nil {
-			return nil, fmt.Errorf("scan user membership: %w", err)
+	premiseIDs := make([]string, 0, len(links))
+	var ownerIDs []string
+	for _, m := range links {
+		premiseIDs = append(premiseIDs, m.premiseID)
+		if m.ownerID != nil {
+			ownerIDs = append(ownerIDs, *m.ownerID)
 		}
+	}
 
-		item.Method = nullableString(method)
-		item.Premise.Entrance = nullableInt(entrance)
-		item.Premise.Floor = nullableInt(floor)
-		item.Premise.DisplayAreaCenti = nullableInt64(displayArea)
-		if ownerID.Valid && fullName.Valid && ownerKind.Valid && shareNum.Valid && shareDen.Valid && weightNum.Valid && weightDen.Valid {
-			item.Owner = &OwnerSummary{
-				ID: ownerID.String, PremiseID: item.Premise.ID, PremiseNumber: item.Premise.Number,
-				MaskedName: maskOwnerName(fullName.String, ownerKind.String), Kind: ownerKind.String,
-				ShareNum: shareNum.Int64, ShareDen: shareDen.Int64,
-				WeightNum: weightNum.Int64, WeightDen: weightDen.Int64,
+	premises, err := s.registry.Premises(ctx, premiseIDs)
+	if err != nil {
+		return nil, err
+	}
+	premiseByID := make(map[string]registry.Premise, len(premises))
+	for _, p := range premises {
+		premiseByID[p.ID] = p
+	}
+
+	ownerByID := make(map[string]registry.Owner, len(ownerIDs))
+	if len(ownerIDs) > 0 {
+		owners, err := s.registry.Owners(ctx, ownerIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, o := range owners {
+			ownerByID[o.ID] = o
+		}
+	}
+
+	result := make([]MembershipSummary, 0, len(links))
+	for _, m := range links {
+		premise, ok := premiseByID[m.premiseID]
+		if !ok {
+			return nil, fmt.Errorf("premise %s of membership %s is missing in the registry", m.premiseID, m.id)
+		}
+		item := MembershipSummary{ID: m.id, Role: m.role, Status: m.status, Method: m.method, Premise: premise}
+		// An owner who left the current registry version has no facts to show.
+		if m.ownerID != nil {
+			if o, ok := ownerByID[*m.ownerID]; ok {
+				owner := maskOwner(o)
+				item.Owner = &owner
 			}
 		}
 		result = append(result, item)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list user memberships: %w", err)
-	}
+	slices.SortFunc(result, func(a, b MembershipSummary) int {
+		return cmp.Or(
+			strings.Compare(a.Premise.House.Address, b.Premise.House.Address),
+			strings.Compare(a.Premise.Number, b.Premise.Number),
+			strings.Compare(a.ID, b.ID),
+		)
+	})
 
 	return result, nil
 }
@@ -163,22 +186,32 @@ func (s *Store) MembershipsByUser(ctx context.Context, userID string) ([]Members
 // A guest is refused: anyone can claim any flat as a guest, and otherwise could
 // collect surnames and initials of all owners flat by flat (docs/01, «Роли и права»).
 func (s *Store) PremiseOwners(ctx context.Context, userID, premiseID string) ([]OwnerSummary, error) {
-	id, err := parseResourceID(premiseID)
+	id, err := resourceID(premiseID)
 	if err != nil {
 		return nil, err
 	}
-	exists, allowed, err := s.premiseOwnerAccess(ctx, userID, id)
+	premises, err := s.registry.Premises(ctx, []string{id})
 	if err != nil {
 		return nil, err
 	}
-	if !exists {
+	if len(premises) == 0 {
 		return nil, ErrNotFound
+	}
+
+	allowed, err := s.mayViewPremiseOwners(ctx, userID, premises[0])
+	if err != nil {
+		return nil, err
 	}
 	if !allowed {
 		return nil, ErrForbidden
 	}
 
-	return s.listOwners(ctx, `p.id = $1`, id)
+	owners, err := s.registry.PremiseOwners(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return maskOwners(owners), nil
 }
 
 // HouseOfficerCandidates returns current-registry owners that can be selected
@@ -187,123 +220,183 @@ func (s *Store) PremiseOwners(ctx context.Context, userID, premiseID string) ([]
 // active path-B initiative of the house (a verified owner) and the staff of the
 // house's management organization (path A). Other owners do not see it.
 func (s *Store) HouseOfficerCandidates(ctx context.Context, userID, houseID string) ([]OwnerSummary, error) {
-	id, err := parseResourceID(houseID)
+	id, err := resourceID(houseID)
 	if err != nil {
 		return nil, err
 	}
-	exists, allowed, err := s.houseOwnerAccess(ctx, userID, id)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
+	house, err := s.registry.House(ctx, id)
+	if errors.Is(err, registry.ErrNotFound) {
 		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	allowed, err := s.organizesMeeting(ctx, userID, house)
+	if err != nil {
+		return nil, err
 	}
 	if !allowed {
 		return nil, ErrForbidden
 	}
 
-	return s.listOwners(ctx, `h.id = $1`, id)
-}
-
-func (s *Store) premiseOwnerAccess(ctx context.Context, userID string, premiseID pgtype.UUID) (bool, bool, error) {
-	var exists, allowed bool
-	err := s.pool.QueryRow(ctx, `
-		SELECT
-			EXISTS (SELECT 1 FROM premises p WHERE p.id = $2),
-			EXISTS (
-				SELECT 1
-				FROM memberships m
-				WHERE m.user_id = $1::uuid AND m.premise_id = $2
-				  AND ((m.role IN ('resident', 'owner') AND m.status = 'verified')
-				       OR (m.role = 'owner' AND m.status = 'pending'))
-				UNION ALL
-				SELECT 1
-				FROM org_members om
-				JOIN houses h ON h.org_id = om.org_id
-				JOIN premises p ON p.house_id = h.id
-				WHERE om.user_id = $1::uuid AND p.id = $2
-			)`, userID, premiseID).Scan(&exists, &allowed)
+	owners, err := s.registry.HouseOwners(ctx, id)
 	if err != nil {
-		return false, false, fmt.Errorf("check premise owner access: %w", err)
+		return nil, err
 	}
 
-	return exists, allowed, nil
+	return maskOwners(owners), nil
 }
 
-func (s *Store) houseOwnerAccess(ctx context.Context, userID string, houseID pgtype.UUID) (bool, bool, error) {
-	var exists, allowed bool
-	err := s.pool.QueryRow(ctx, `
-		SELECT
-			EXISTS (SELECT 1 FROM houses h WHERE h.id = $2),
-			EXISTS (
-				SELECT 1
-				FROM initiatives i
-				WHERE i.house_id = $2 AND i.initiator_user_id = $1::uuid
-				  AND i.path = 'B' AND i.stage IN ('poll', 'demand', 'meeting')
-				  AND i.hidden_at IS NULL
-				  AND EXISTS (
-				      SELECT 1
-				      FROM memberships m
-				      JOIN premises p ON p.id = m.premise_id
-				      WHERE m.user_id = $1::uuid AND p.house_id = $2
-				        AND m.role = 'owner' AND m.status = 'verified')
-				UNION ALL
-				SELECT 1
-				FROM org_members om
-				JOIN houses h ON h.org_id = om.org_id
-				WHERE om.user_id = $1::uuid AND h.id = $2
-			)`, userID, houseID).Scan(&exists, &allowed)
-	if err != nil {
-		return false, false, fmt.Errorf("check house owner access: %w", err)
-	}
-
-	return exists, allowed, nil
+// membership is a user's link to a premise as the module stores it.
+type membership struct {
+	id        string
+	role      string
+	status    string
+	method    *string
+	premiseID string
+	ownerID   *string
 }
 
-func (s *Store) listOwners(ctx context.Context, where string, id pgtype.UUID) ([]OwnerSummary, error) {
-	query := `
-		SELECT o.id::text, p.id::text, p.number, r.full_name, r.owner_kind,
-		       r.share_num, r.share_den, r.weight_num, r.weight_den
-		FROM owners o
-		JOIN premises p ON p.id = o.premise_id
-		JOIN houses h ON h.id = p.house_id
-		JOIN registry_uploads ru
-		     ON ru.house_id = h.id AND ru.version = h.current_registry_version
-		JOIN owner_records r
-		     ON r.owner_id = o.id AND r.registry_upload_id = ru.id
-		WHERE ` + where + `
-		ORDER BY p.number, r.full_name, o.id`
-	rows, err := s.pool.Query(ctx, query, id)
+// memberships returns the user's links that are not revoked.
+func (s *Store) memberships(ctx context.Context, userID string) ([]membership, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, role, status, method, premise_id::text, owner_id::text
+		FROM memberships
+		WHERE user_id = $1::uuid AND status <> 'revoked'`, userID)
 	if err != nil {
-		return nil, fmt.Errorf("list owners: %w", err)
+		return nil, fmt.Errorf("list user memberships: %w", err)
 	}
 	defer rows.Close()
 
-	result := make([]OwnerSummary, 0)
+	var result []membership
 	for rows.Next() {
-		var item OwnerSummary
-		var fullName string
-		if err := rows.Scan(&item.ID, &item.PremiseID, &item.PremiseNumber, &fullName, &item.Kind,
-			&item.ShareNum, &item.ShareDen, &item.WeightNum, &item.WeightDen); err != nil {
-			return nil, fmt.Errorf("scan owner: %w", err)
+		var m membership
+		if err := rows.Scan(&m.id, &m.role, &m.status, &m.method, &m.premiseID, &m.ownerID); err != nil {
+			return nil, fmt.Errorf("scan user membership: %w", err)
 		}
-		item.MaskedName = maskOwnerName(fullName, item.Kind)
-		result = append(result, item)
+		result = append(result, m)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("list owners: %w", err)
+		return nil, fmt.Errorf("list user memberships: %w", err)
 	}
 
 	return result, nil
 }
 
-func parseResourceID(value string) (pgtype.UUID, error) {
-	var id pgtype.UUID
-	if err := id.Scan(value); err != nil || !id.Valid {
-		return pgtype.UUID{}, ErrNotFound
+// mayViewPremiseOwners reports whether the user's link to the premise is confirmed
+// (a verified resident or owner, or an owner waiting for the company's check) or the
+// user is staff of the house's management organization.
+func (s *Store) mayViewPremiseOwners(ctx context.Context, userID string, premise registry.Premise) (bool, error) {
+	var linked bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM memberships
+			WHERE user_id = $1::uuid AND premise_id = $2::uuid
+			  AND ((role IN ('resident', 'owner') AND status = 'verified')
+			       OR (role = 'owner' AND status = 'pending')))`, userID, premise.ID).Scan(&linked)
+	if err != nil {
+		return false, fmt.Errorf("check premise link: %w", err)
+	}
+	if linked {
+		return true, nil
 	}
 
-	return id, nil
+	return s.isStaff(ctx, userID, premise.House)
+}
+
+// isStaff reports whether the user works in the management organization of the house.
+func (s *Store) isStaff(ctx context.Context, userID string, house registry.HouseRef) (bool, error) {
+	if house.OrgID == nil {
+		return false, nil
+	}
+
+	var staff bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (SELECT 1 FROM org_members WHERE user_id = $1::uuid AND org_id = $2::uuid)`,
+		userID, *house.OrgID).Scan(&staff)
+	if err != nil {
+		return false, fmt.Errorf("check staff: %w", err)
+	}
+
+	return staff, nil
+}
+
+// organizesMeeting reports whether the user organizes a meeting of the house: staff
+// of its management organization (path A) or the initiator of an active path-B
+// initiative who is a verified owner in the house.
+func (s *Store) organizesMeeting(ctx context.Context, userID string, house registry.HouseRef) (bool, error) {
+	staff, err := s.isStaff(ctx, userID, house)
+	if err != nil {
+		return false, err
+	}
+	if staff {
+		return true, nil
+	}
+
+	initiator, err := s.initiatives.IsPathBInitiator(ctx, userID, house.ID)
+	if err != nil {
+		return false, err
+	}
+	if !initiator {
+		return false, nil
+	}
+
+	return s.verifiedOwnerIn(ctx, userID, house.ID)
+}
+
+// verifiedOwnerIn reports whether the user is a verified owner of a premise of the house.
+func (s *Store) verifiedOwnerIn(ctx context.Context, userID, houseID string) (bool, error) {
+	links, err := s.memberships(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	var premiseIDs []string
+	for _, m := range links {
+		if m.role == "owner" && m.status == "verified" {
+			premiseIDs = append(premiseIDs, m.premiseID)
+		}
+	}
+	if len(premiseIDs) == 0 {
+		return false, nil
+	}
+
+	premises, err := s.registry.Premises(ctx, premiseIDs)
+	if err != nil {
+		return false, err
+	}
+
+	return slices.ContainsFunc(premises, func(p registry.Premise) bool { return p.House.ID == houseID }), nil
+}
+
+// resourceID validates an id that comes from the URL: a malformed id means
+// «not found» without a query.
+func resourceID(value string) (string, error) {
+	var id pgtype.UUID
+	if err := id.Scan(value); err != nil || !id.Valid {
+		return "", ErrNotFound
+	}
+
+	return id.String(), nil
+}
+
+func maskOwners(owners []registry.Owner) []OwnerSummary {
+	result := make([]OwnerSummary, 0, len(owners))
+	for _, o := range owners {
+		result = append(result, maskOwner(o))
+	}
+
+	return result
+}
+
+func maskOwner(o registry.Owner) OwnerSummary {
+	return OwnerSummary{
+		ID: o.ID, PremiseID: o.PremiseID, PremiseNumber: o.PremiseNumber,
+		MaskedName: maskOwnerName(o.FullName, o.Kind), Kind: o.Kind,
+		ShareNum: o.ShareNum, ShareDen: o.ShareDen,
+		WeightNum: o.WeightNum, WeightDen: o.WeightDen,
+	}
 }
 
 func maskOwnerName(fullName, kind string) string {
@@ -323,31 +416,4 @@ func maskOwnerName(fullName, kind string) string {
 	}
 
 	return strings.Join(masked, " ")
-}
-
-func nullableString(v sql.NullString) *string {
-	if !v.Valid {
-		return nil
-	}
-	value := v.String
-
-	return &value
-}
-
-func nullableInt(v sql.NullInt64) *int {
-	if !v.Valid {
-		return nil
-	}
-	value := int(v.Int64)
-
-	return &value
-}
-
-func nullableInt64(v sql.NullInt64) *int64 {
-	if !v.Valid {
-		return nil
-	}
-	value := v.Int64
-
-	return &value
 }
