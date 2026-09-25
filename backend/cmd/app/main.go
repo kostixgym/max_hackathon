@@ -9,13 +9,19 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
+	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
+	"github.com/max-messenger/max-bot-api-client-go/v2/model"
+
 	"maxhackathon/backend/internal/access"
+	"maxhackathon/backend/internal/bot"
 	"maxhackathon/backend/internal/platform/config"
 	"maxhackathon/backend/internal/platform/db"
 	"maxhackathon/backend/internal/platform/httpapi"
+	"maxhackathon/backend/internal/platform/maxbot"
 	"maxhackathon/backend/internal/platform/security"
 	"maxhackathon/backend/internal/registry"
 	"maxhackathon/backend/migrations"
@@ -84,6 +90,11 @@ func run() error {
 		DevMode:  cfg.DevMode,
 	})
 
+	var wg sync.WaitGroup
+	if cfg.BotToken != "" {
+		wg.Go(func() { runBot(ctx, cfg.BotToken, houses, log) })
+	}
+
 	srv := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           handler,
@@ -112,7 +123,53 @@ func run() error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	return srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
+	wg.Wait()
+
+	return err
+}
+
+// runBot starts the chat bot. Problems with the MAX API never stop the service:
+// the HTTP API of the mini-app keeps working, the bot retries.
+func runBot(ctx context.Context, token string, houses bot.Houses, log *slog.Logger, opts ...maxapi.Opt) {
+	api, err := maxapi.NewApi(token, opts...)
+	if err != nil {
+		log.Error("bot: create MAX client", "err", err)
+
+		return
+	}
+
+	var me model.BotInfo
+	for {
+		if me, err = api.Bots.GetMyInfo(ctx); err == nil {
+			break
+		}
+		log.Warn("bot: get bot info failed, retrying", "err", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(5 * time.Second):
+		}
+	}
+
+	// Long polling does not receive updates while a webhook subscription exists.
+	if subs, err := api.Subscriptions.GetSubscriptions(ctx); err == nil && len(subs.Subscriptions) > 0 {
+		log.Warn("bot: webhook subscriptions exist, long polling will get no updates", "count", len(subs.Subscriptions))
+	}
+
+	log.Info("bot started", "username", me.Username, "bot_id", me.UserID)
+	poller := &maxbot.Poller{
+		Updates: api.Subscriptions,
+		Handler: &bot.Bot{
+			Messages: api.Messages,
+			Houses:   houses,
+			Me:       bot.Identity{UserID: me.UserID, Username: me.Username},
+			Log:      log,
+		},
+		Log: log,
+	}
+	poller.Run(ctx)
+	log.Info("bot stopped")
 }
 
 func newLogger(level string) *slog.Logger {
