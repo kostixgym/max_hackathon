@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +29,12 @@ import (
 )
 
 func main() {
+	// `app healthcheck` is the container health check: the runtime image
+	// (distroless) has no shell and no curl.
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(healthcheck())
+	}
+
 	if err := run(); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -170,6 +177,33 @@ func runBot(ctx context.Context, token string, houses bot.Houses, log *slog.Logg
 	}
 	poller.Run(ctx)
 	log.Info("bot stopped")
+}
+
+// healthcheck asks the running service whether it is ready (PostgreSQL reachable).
+func healthcheck() int {
+	addr := os.Getenv("HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 1
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+
+	client := http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort(host, port) + "/api/v1/readyz")
+	if err != nil {
+		return 1
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+
+	return 0
 }
 
 func newLogger(level string) *slog.Logger {

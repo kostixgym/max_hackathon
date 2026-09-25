@@ -1,0 +1,17 @@
+# Build context is the repository root; only backend/, deploy/ and (from step 0.4) miniapp/ are needed.
+.git
+.github
+.idea
+.vscode
+**/.DS_Store
+docs
+*.md
+
+# Secrets never go into images
+.env
+.env.*
+
+# Build artefacts and dependencies are rebuilt inside the image
+backend/bin
+**/node_modules
+miniapp/dist
