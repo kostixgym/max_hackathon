@@ -85,6 +85,11 @@ func run() error {
 	initService := initiatives.NewService(pool, tm, catalog, houses, users, notifier)
 	polls := poll.NewStore(pool, initService, users, houses)
 
+	// Decision types and templates are platform data, not demo data (решение 9):
+	// without them no initiative can be created, so they are seeded on every start.
+	if err := catalog.SeedCatalog(ctx); err != nil {
+		return fmt.Errorf("seed rules catalog: %w", err)
+	}
 	if cfg.SeedDemo {
 		slug, err := houses.SeedDemo(ctx, hasher, cfg.DemoInviteSlug, log)
 		if err != nil {
@@ -92,9 +97,6 @@ func run() error {
 		}
 		// The invite link is public by design (it hangs on the entrance door), logging it is fine.
 		log.Info("demo house ready", "invite_slug", slug)
-		if err := catalog.SeedCatalog(ctx); err != nil {
-			return fmt.Errorf("seed rules catalog: %w", err)
-		}
 	}
 
 	handler := httpapi.NewHandler(httpapi.Deps{

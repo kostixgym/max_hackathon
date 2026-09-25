@@ -2,21 +2,27 @@ package poll
 
 // Integration test of the whole support-poll flow against PostgreSQL 18:
 // demo confirmations → initiative from the template → poll start with job
-// enqueueing → weighted votes (including a 1/3 share and a vote change with the
-// survey reset) → live progress → the access rules. Skipped without
-// TEST_DATABASE_URL, like the other integration tests.
+// enqueueing → weighted votes (a 1/3 share, one user with two flats, a vote
+// change with the survey reset) → live progress → the queue and markers.
+// Skipped without TEST_DATABASE_URL, like the other integration tests.
+//
+// The test can run again on the same database: its users, jobs and markers are
+// unique per run and removed afterwards. Flats 7, 22 and 43 of the demo house are
+// reserved for it and freed at the start.
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/initiatives"
@@ -27,6 +33,8 @@ import (
 	"maxhackathon/backend/internal/rules"
 	"maxhackathon/backend/migrations"
 )
+
+var reservedFlats = []string{"7", "22", "43"}
 
 func TestPollFlowIntegration(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
@@ -41,7 +49,8 @@ func TestPollFlowIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
+	// Cleanups run in reverse order: the pool closes after the rows are removed.
+	t.Cleanup(pool.Close)
 	if err := db.Migrate(ctx, pool, migrations.FS, log); err != nil {
 		t.Fatal(err)
 	}
@@ -67,38 +76,62 @@ func TestPollFlowIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Three testers: two co-owners of flat 43 (1/2 each, 48.00 м² flat) and one
-	// owner of flat 7 (1/3 share, 48.00 м² flat), plus an outsider.
-	alice, err := users.EnsureUser(ctx, 101)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bob, err := users.EnsureUser(ctx, 102)
-	if err != nil {
-		t.Fatal(err)
-	}
-	carol, err := users.EnsureUser(ctx, 103)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dave, err := users.EnsureUser(ctx, 104)
-	if err != nil {
+	run := time.Now().UnixNano()
+	probeType := fmt.Sprintf("probe-%d", run)
+	botID := run
+	var userIDs []string
+	var initiativeID string
+	t.Cleanup(func() {
+		exec := func(sql string, args ...any) {
+			if _, err := pool.Exec(ctx, sql, args...); err != nil {
+				t.Errorf("cleanup %q: %v", sql, err)
+			}
+		}
+		exec(`DELETE FROM jobs WHERE type = $1`, probeType)
+		if initiativeID != "" {
+			// Poll votes and agenda items go with the initiative.
+			exec(`DELETE FROM jobs WHERE dedup_key LIKE $1`, notify.TypePollInvite+":"+initiativeID+":%")
+			exec(`DELETE FROM initiatives WHERE id = $1::uuid`, initiativeID)
+		}
+		// Links go with the users.
+		exec(`DELETE FROM users WHERE id = ANY($1::uuid[])`, userIDs)
+		exec(`DELETE FROM bot_markers WHERE bot_user_id = $1`, botID)
+	})
+
+	if _, err := pool.Exec(ctx, `
+		DELETE FROM memberships
+		WHERE premise_id IN (SELECT id FROM premises WHERE house_id = $1::uuid AND number = ANY($2))`,
+		house.ID, reservedFlats); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := users.ConfirmDemoOwner(ctx, alice.ID, house.ID, "43", 1); err != nil {
-		t.Fatalf("alice demo owner: %v", err)
+	newUser := func(n int64) access.User {
+		t.Helper()
+		u, err := users.EnsureUser(ctx, run+n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		userIDs = append(userIDs, u.ID)
+
+		return u
 	}
-	if _, err := users.ConfirmDemoOwner(ctx, bob.ID, house.ID, "43", 2); err != nil {
-		t.Fatalf("bob demo owner: %v", err)
-	}
-	if _, err := users.ConfirmDemoOwner(ctx, carol.ID, house.ID, "7", 1); err != nil {
-		t.Fatalf("carol demo owner: %v", err)
+	alice, bob, carol, dave := newUser(1), newUser(2), newUser(3), newUser(4)
+
+	// Alice and Bob are the co-owners of flat 43 (1/2 each of 48.00 м²), Carol owns
+	// 1/3 of flat 7 (48.00 м²) and 1/3 of flat 22 (46.00 м²). Dave is an outsider.
+	for _, c := range []struct {
+		user  access.User
+		flat  string
+		index int
+	}{{alice, "43", 1}, {bob, "43", 2}, {carol, "7", 1}, {carol, "22", 1}} {
+		if _, err := users.ConfirmDemoOwner(ctx, c.user.ID, house.ID, c.flat, c.index); err != nil {
+			t.Fatalf("demo owner of flat %s: %v", c.flat, err)
+		}
 	}
 
 	// The same owner record cannot be confirmed by two accounts (invariant 9).
-	if _, err := users.ConfirmDemoOwner(ctx, dave.ID, house.ID, "43", 1); err == nil {
-		t.Fatal("second account on the same owner must be rejected")
+	if _, err := users.ConfirmDemoOwner(ctx, dave.ID, house.ID, "43", 1); !errors.Is(err, access.ErrOwnerTaken) {
+		t.Fatalf("second account on the same owner: %v, want ErrOwnerTaken", err)
 	}
 
 	initiative, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
@@ -108,7 +141,8 @@ func TestPollFlowIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if initiative.Stage != "draft" || initiative.RegistryUploadID == "" {
+	initiativeID = initiative.ID
+	if initiative.Stage != "draft" || initiative.RegistryUploadID == "" || initiative.Description == "" {
 		t.Fatalf("initiative = %+v", initiative)
 	}
 
@@ -123,68 +157,92 @@ func TestPollFlowIntegration(t *testing.T) {
 	if started.Stage != "poll" || started.PollEndsAt == nil {
 		t.Fatalf("started = %+v", started)
 	}
-
-	// Invitations: one job per verified owner (three at the moment of the start).
-	var invitations int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE type = 'poll_invite'`).Scan(&invitations); err != nil {
-		t.Fatal(err)
-	}
-	if invitations != 3 {
-		t.Fatalf("poll_invite jobs = %d, want 3", invitations)
+	if _, err := initService.Get(ctx, "not-a-uuid"); !errors.Is(err, initiatives.ErrNotFound) {
+		t.Fatalf("malformed id: %v, want ErrNotFound", err)
 	}
 
-	// Votes: alice 24.00 м² for, carol 16.00 м² for (48 * 1/3).
-	if _, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: alice.ID, Choice: ChoiceFor,
-		OfficialChannel: ChannelPaper, WillingToHelp: true}); err != nil {
-		t.Fatal(err)
+	// Invitations: one job per verified owner (Carol with two flats gets one), none
+	// for Dave. Other tests may add owners of their own, so only ours are counted.
+	for _, c := range []struct {
+		user access.User
+		want int
+	}{{alice, 1}, {bob, 1}, {carol, 1}, {dave, 0}} {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE dedup_key = $1`,
+			fmt.Sprintf("%s:%s:%s", notify.TypePollInvite, initiative.ID, c.user.ID)).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != c.want {
+			t.Fatalf("poll_invite jobs of user %s = %d, want %d", c.user.ID, n, c.want)
+		}
 	}
-	if _, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: carol.ID, Choice: ChoiceFor}); err != nil {
-		t.Fatal(err)
+
+	vote := func(u access.User, choice string, survey *Survey) CastResult {
+		t.Helper()
+		res, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: u.ID, Choice: choice, Survey: survey})
+		if err != nil {
+			t.Fatalf("vote of %s: %v", u.ID, err)
+		}
+
+		return res
+	}
+	surveyOf := func(u access.User) (channel *string, willing bool) {
+		t.Helper()
+		if err := pool.QueryRow(ctx, `
+			SELECT official_channel, willing_to_help FROM poll_votes
+			WHERE initiative_id = $1::uuid AND user_id = $2::uuid`,
+			initiative.ID, u.ID).Scan(&channel, &willing); err != nil {
+			t.Fatal(err)
+		}
+
+		return channel, willing
+	}
+
+	// Alice: 24.00 м² «за» with the survey from the mini-app.
+	vote(alice, ChoiceFor, &Survey{OfficialChannel: ChannelPaper, WillingToHelp: true})
+	// Pressing «Поддерживаю» in the chat again does not erase the survey.
+	vote(alice, ChoiceFor, nil)
+	if channel, willing := surveyOf(alice); channel == nil || *channel != ChannelPaper || !willing {
+		t.Fatalf("alice survey after a repeated chat vote: channel=%v willing=%v, want kept", channel, willing)
+	}
+
+	// Carol votes with both flats: 16.00 + 15.33… = 94/3 м².
+	carolVote := vote(carol, ChoiceFor, nil)
+	if got := big.NewRat(carolVote.WeightNum, carolVote.WeightDen*100); got.Cmp(big.NewRat(94, 3)) != 0 ||
+		!strings.Contains(carolVote.PremiseNumber, "7") || !strings.Contains(carolVote.PremiseNumber, "22") {
+		t.Fatalf("carol = %+v (%v м²), want 94/3 м² for flats 7 and 22", carolVote, got)
 	}
 
 	progress, err := polls.Progress(ctx, initiative.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := progress.ForM2(); got.Cmp(big.NewRat(40, 1)) != 0 {
-		t.Fatalf("for = %v м², want 40", got)
+	if got := progress.ForM2(); got.Cmp(big.NewRat(24*3+94, 3)) != 0 {
+		t.Fatalf("for = %v м², want 166/3", got)
 	}
-	if progress.VotesFor != 2 || progress.DemandReached() {
+	if progress.VotesFor != 3 || progress.DemandReached() {
 		t.Fatalf("progress = %+v", progress)
 	}
 
-	// Bob votes against; alice changes her mind: the survey resets (invariant 7).
-	if _, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: bob.ID, Choice: ChoiceAgainst}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: alice.ID, Choice: ChoiceAgainst}); err != nil {
-		t.Fatal(err)
-	}
-
-	var willing bool
-	var channel *string
-	if err := pool.QueryRow(ctx, `
-		SELECT willing_to_help, official_channel FROM poll_votes
-		WHERE initiative_id = $1::uuid AND user_id = $2::uuid`,
-		initiative.ID, alice.ID).Scan(&willing, &channel); err != nil {
-		t.Fatal(err)
-	}
-	if willing || channel != nil {
-		t.Fatalf("alice survey after the change: willing=%v channel=%v, want reset", willing, channel)
+	// Bob votes against; Alice changes her mind: the survey resets (invariant 7).
+	vote(bob, ChoiceAgainst, nil)
+	vote(alice, ChoiceAgainst, nil)
+	if channel, willing := surveyOf(alice); channel != nil || willing {
+		t.Fatalf("alice survey after «против»: channel=%v willing=%v, want reset", channel, willing)
 	}
 
 	progress, err = polls.Progress(ctx, initiative.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := progress.ForM2(); got.Cmp(big.NewRat(16, 1)) != 0 {
-		t.Fatalf("for after the change = %v м², want 16", got)
+	if got := progress.ForM2(); got.Cmp(big.NewRat(94, 3)) != 0 {
+		t.Fatalf("for after the change = %v м², want 94/3", got)
 	}
 	if got := progress.AgainstM2(); got.Cmp(big.NewRat(48, 1)) != 0 {
 		t.Fatalf("against after the change = %v м², want 48", got)
 	}
-	if progress.VotesFor != 1 || progress.VotesAgainst != 2 {
-		t.Fatalf("votes = %d/%d", progress.VotesFor, progress.VotesAgainst)
+	if progress.VotesFor != 2 || progress.VotesAgainst != 2 {
+		t.Fatalf("votes = %d/%d, want 2/2", progress.VotesFor, progress.VotesAgainst)
 	}
 
 	// An outsider without a verified link cannot vote.
@@ -200,80 +258,19 @@ func TestPollFlowIntegration(t *testing.T) {
 		t.Fatalf("vote on a frozen poll: %v", err)
 	}
 
-	// The queue: deduplication and the claim lifecycle.
-	if err := notifier.Enqueue(ctx, notify.Job{Type: "probe", DedupKey: "probe:1"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := notifier.Enqueue(ctx, notify.Job{Type: "probe", DedupKey: "probe:1"}); err != nil {
-		t.Fatal(err)
-	}
-	var queued int
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE type = 'probe'`).Scan(&queued); err != nil {
-		t.Fatal(err)
-	}
-	if queued != 1 {
-		t.Fatalf("dedup: %d jobs, want 1", queued)
-	}
-
-	claimed, err := notifier.Claim(ctx, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var probe *string
-	for i := range claimed {
-		if claimed[i].Type == "probe" {
-			probe = &claimed[i].ID
-		}
-	}
-	if probe == nil {
-		t.Fatalf("probe job not claimed: %+v", claimed)
-	}
-	if err := notifier.Complete(ctx, *probe); err != nil {
-		t.Fatal(err)
-	}
-	var status string
-	if err := pool.QueryRow(ctx, `SELECT status FROM jobs WHERE id = $1::uuid`, *probe).Scan(&status); err != nil {
-		t.Fatal(err)
-	}
-	if status != "done" {
-		t.Fatalf("status = %s", status)
-	}
-
-	// A failing job with one attempt budget goes to 'failed'.
-	if err := notifier.Enqueue(ctx, notify.Job{Type: "probe", DedupKey: "probe:2"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE jobs SET max_attempts = 1 WHERE dedup_key = 'probe:2'`); err != nil {
-		t.Fatal(err)
-	}
-	claimed, err = notifier.Claim(ctx, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(claimed) != 1 {
-		t.Fatalf("second claim = %+v", claimed)
-	}
-	if err := notifier.Retry(ctx, claimed[0].ID, errors.New("boom"), time.Minute); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `SELECT status FROM jobs WHERE dedup_key = 'probe:2'`).Scan(&status); err != nil {
-		t.Fatal(err)
-	}
-	if status != "failed" {
-		t.Fatalf("failed status = %s", status)
-	}
+	testQueue(t, ctx, pool, notifier, probeType)
 
 	// Poller markers survive a restart.
-	if err := notifier.SaveMarker(ctx, 555, 42); err != nil {
+	if err := notifier.SaveMarker(ctx, botID, 42); err != nil {
 		t.Fatal(err)
 	}
-	marker, err := notifier.LoadMarker(ctx, 555)
+	marker, err := notifier.LoadMarker(ctx, botID)
 	if err != nil || marker != 42 {
 		t.Fatalf("marker = %d, %v", marker, err)
 	}
-	zero, err := notifier.LoadMarker(ctx, 556)
-	if err != nil || zero != 0 {
-		t.Fatalf("unknown bot marker = %d, %v", zero, err)
+	unknown, err := notifier.LoadMarker(ctx, botID+1)
+	if err != nil || unknown != 0 {
+		t.Fatalf("unknown bot marker = %d, %v", unknown, err)
 	}
 
 	// The rules catalog is idempotent and readable.
@@ -287,6 +284,87 @@ func TestPollFlowIntegration(t *testing.T) {
 	if len(tpl.Items) != 1 || tpl.Items[0].MajorityRule != string(rules.TwoThirdsOfAll) {
 		t.Fatalf("template = %+v", tpl)
 	}
+}
 
-	_ = pgx.ErrNoRows // keep the import for direct row checks
+// testQueue checks deduplication and the life cycle of a job. Probe jobs are due
+// long ago and claimed one at a time, so jobs of other tests are never taken.
+func testQueue(t *testing.T, ctx context.Context, pool *pgxpool.Pool, notifier *notify.Store, probeType string) {
+	t.Helper()
+
+	longAgo := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	key := func(name string) string { return probeType + ":" + name }
+	enqueue := func(name string, maxAttempts int) {
+		t.Helper()
+		if err := notifier.Enqueue(ctx, notify.Job{Type: probeType, DedupKey: key(name), RunAt: longAgo}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE jobs SET max_attempts = $2 WHERE dedup_key = $1`, key(name), maxAttempts); err != nil {
+			t.Fatal(err)
+		}
+	}
+	claimOne := func() notify.ClaimedJob {
+		t.Helper()
+		claimed, err := notifier.Claim(ctx, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(claimed) != 1 || claimed[0].Type != probeType {
+			t.Fatalf("claimed %+v, want one %s job", claimed, probeType)
+		}
+
+		return claimed[0]
+	}
+	status := func(name string) string {
+		t.Helper()
+		var s string
+		if err := pool.QueryRow(ctx, `SELECT status FROM jobs WHERE dedup_key = $1`, key(name)).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+
+		return s
+	}
+
+	// Deduplication: a second job with the same key is dropped.
+	enqueue("done", 5)
+	enqueue("done", 5)
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE type = $1`, probeType).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("dedup: %d jobs, want 1", n)
+	}
+
+	// queued → running → done.
+	if err := notifier.Complete(ctx, claimOne().ID); err != nil {
+		t.Fatal(err)
+	}
+	if s := status("done"); s != "done" {
+		t.Fatalf("status = %s, want done", s)
+	}
+
+	// A failing job without attempts left fails for good.
+	enqueue("failed", 1)
+	if err := notifier.Retry(ctx, claimOne().ID, errors.New("boom"), time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if s := status("failed"); s != "failed" {
+		t.Fatalf("status = %s, want failed", s)
+	}
+
+	// A job stuck in 'running' after a crash goes back to the queue, and fails once
+	// its attempts are spent (a job that kills the worker must not loop forever).
+	enqueue("stuck", 2)
+	for _, want := range []string{"queued", "failed"} {
+		stuck := claimOne()
+		if _, err := pool.Exec(ctx, `UPDATE jobs SET updated_at = now() - interval '11 minutes' WHERE id = $1::uuid`, stuck.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := notifier.ResetStale(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if s := status("stuck"); s != want {
+			t.Fatalf("stale job after attempt %d: status = %s, want %s", stuck.Attempts, s, want)
+		}
+	}
 }

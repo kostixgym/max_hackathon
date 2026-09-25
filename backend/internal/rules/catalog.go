@@ -67,7 +67,7 @@ func (c *Catalog) TemplateByCode(ctx context.Context, code string) (CatalogTempl
 	}
 
 	rows, err := c.pool.Query(ctx, `
-		SELECT i.position, i.text, d.code, d.id::text, d.majority_rule, d.legal_reference
+		SELECT i.position, i.text, d.code, d.id::text, d.majority_rule, coalesce(d.legal_reference, '')
 		FROM template_items i
 		JOIN decision_types d ON d.id = i.decision_type_id
 		WHERE i.template_id = $1::uuid
@@ -110,13 +110,15 @@ func (c *Catalog) seedDecisionType(ctx context.Context, code, name, rule, ref st
 
 // SeedCatalog idempotently creates the decision types and the MVP templates.
 func (c *Catalog) SeedCatalog(ctx context.Context) error {
-	// Ст. 46 ч. 2 ЖК: передача общего имущества в пользование — не менее 2/3 всех
-	// голосов. Видеонаблюдение в подъезде попадает сюда (позиция ВС РФ, docs/00).
+	// Пользование общим имуществом (п. 3 ч. 2 ст. 44 ЖК) решается большинством не менее
+	// 2/3 голосов от общего числа голосов собственников (ч. 1 ст. 46 ЖК). Видеонаблюдение
+	// в подъезде попадает сюда (позиция ВС РФ, docs/00). Часть 2 статьи 46 — о другом:
+	// собрание не решает вопросы вне повестки.
 	if err := c.seedDecisionType(ctx,
 		"common_property_use",
-		"Передача общего имущества в пользование (в том числе видеонаблюдение)",
+		"Пользование общим имуществом (в том числе видеонаблюдение)",
 		string(TwoThirdsOfAll),
-		"ЖК РФ, ст. 46 ч. 2",
+		"ЖК РФ, ч. 1 ст. 46, п. 3 ч. 2 ст. 44",
 	); err != nil {
 		return fmt.Errorf("seed decision type: %w", err)
 	}

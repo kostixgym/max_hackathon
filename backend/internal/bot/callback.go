@@ -39,7 +39,8 @@ const votePayloadPrefix = "pv"
 // callback handles a button press on a poll message.
 func (b *Bot) callback(ctx context.Context, u model.Update) {
 	cb := u.Callback
-	if cb == nil {
+	if cb == nil || cb.User.UserID <= 0 {
+		// Without the presser there is nobody to count the vote for.
 		return
 	}
 

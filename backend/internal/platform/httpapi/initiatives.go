@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"io"
 	"math/big"
 	"net/http"
 	"time"
@@ -93,7 +94,7 @@ func (h *handlers) createInitiative(c *gin.Context) {
 		h.log.Error("create initiative", "err", err)
 		writeError(c, http.StatusInternalServerError, "internal", "Не удалось создать инициативу, попробуйте ещё раз")
 	default:
-		writeJSON(c, http.StatusCreated, toInitiativeJSON(created))
+		writeJSON(c, http.StatusCreated, toInitiativeJSON(created, id.UserID))
 	}
 }
 
@@ -109,7 +110,13 @@ func (h *handlers) startPoll(c *gin.Context) {
 	var body struct {
 		Days int `json:"days" binding:"omitempty,min=1,max=30"`
 	}
-	_ = c.ShouldBindJSON(&body) // the body may be empty
+	// The body may be empty (the default 7 days), but a present one must be valid:
+	// otherwise «days: 365» would pass the 30-day limit.
+	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(c, http.StatusBadRequest, "invalid_request", "Срок опроса — от 1 до 30 дней")
+
+		return
+	}
 
 	endsAt := time.Time{}
 	if body.Days > 0 {
@@ -128,7 +135,7 @@ func (h *handlers) startPoll(c *gin.Context) {
 		h.log.Error("start poll", "err", err)
 		writeError(c, http.StatusInternalServerError, "internal", "Не удалось запустить опрос, попробуйте ещё раз")
 	default:
-		writeJSON(c, http.StatusOK, toInitiativeJSON(started))
+		writeJSON(c, http.StatusOK, toInitiativeJSON(started, id.UserID))
 	}
 }
 
@@ -154,15 +161,15 @@ func (h *handlers) initiativeProgress(c *gin.Context) {
 		return
 	}
 
-	// Прогресс видят подтверждённые жители дома (решение 19).
-	member, err := h.access.IsVerifiedMemberIn(c.Request.Context(), id.UserID, initiative.HouseID)
+	// Прогресс видят подтверждённые жители дома (решение 19) и сотрудники УК (решение 43).
+	allowed, err := h.access.MayViewInitiatives(c.Request.Context(), id.UserID, initiative.HouseID)
 	if err != nil {
-		h.log.Error("check member for progress", "err", err)
+		h.log.Error("check access to progress", "err", err)
 		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить опрос, попробуйте ещё раз")
 
 		return
 	}
-	if !member {
+	if !allowed {
 		writeError(c, http.StatusForbidden, "not_member", "Прогресс видят подтверждённые жители дома")
 
 		return
@@ -216,6 +223,10 @@ func (h *handlers) demoMembership(c *gin.Context) {
 		writeError(c, http.StatusForbidden, "not_demo", "Быстрое подтверждение работает только в демо-доме")
 	case errors.Is(err, access.ErrNotFound):
 		writeError(c, http.StatusNotFound, "premise_not_found", "Квартира не найдена. Проверьте номер")
+	case errors.Is(err, access.ErrOwnerTaken):
+		// Инвариант 9: the text of docs/04 for the second account.
+		writeError(c, http.StatusConflict, "owner_taken",
+			"Этот собственник уже подтверждён за другим аккаунтом. Выберите другого собственника квартиры или другую квартиру")
 	case err != nil:
 		h.log.Error("demo membership", "err", err)
 		writeError(c, http.StatusInternalServerError, "internal", "Не удалось подтвердить квартиру, попробуйте ещё раз")
@@ -240,11 +251,12 @@ type initiativeJSON struct {
 	IsInitiator bool       `json:"is_initiator"`
 }
 
-func toInitiativeJSON(in initiatives.Initiative) initiativeJSON {
+// toInitiativeJSON: is_initiator says whether the caller leads the initiative.
+func toInitiativeJSON(in initiatives.Initiative, callerID string) initiativeJSON {
 	return initiativeJSON{
 		ID: in.ID, HouseID: in.HouseID, Title: in.Title, Description: in.Description,
 		Stage: in.Stage, PollEndsAt: in.PollEndsAt,
-		IsInitiator: in.InitiatorUserID != nil,
+		IsInitiator: in.InitiatorUserID != nil && *in.InitiatorUserID == callerID,
 	}
 }
 

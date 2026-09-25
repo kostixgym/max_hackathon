@@ -161,6 +161,20 @@ func TestCallbackIgnoresForeignPayloads(t *testing.T) {
 	}
 }
 
+// A callback without the presser must not create a user with MAX id 0.
+func TestCallbackWithoutUserIsIgnored(t *testing.T) {
+	votes := &fakeVotes{}
+	b := newVoteBot(votes)
+	users := &fakeUsers{}
+	b.Users = users
+
+	b.Handle(context.Background(), callbackUpdate("cb-0", "pv:"+testInitiative+":for", 0))
+
+	if len(users.ids) != 0 || len(votes.cast) != 0 {
+		t.Fatalf("users = %v, votes = %+v, want none", users.ids, votes.cast)
+	}
+}
+
 func TestCallbackWithoutDepsIsIgnored(t *testing.T) {
 	b := &Bot{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}                          // no Users/Votes/Answers
 	b.Handle(context.Background(), callbackUpdate("cb-1", "pv:"+testInitiative+":for", 42)) // must not panic

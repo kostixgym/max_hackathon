@@ -3,6 +3,7 @@ package bot
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
@@ -43,9 +44,18 @@ func (p *PollInviter) HandleJob(ctx context.Context, payload json.RawMessage) er
 		return fmt.Errorf("poll invite payload: initiative_id %q, max_user_id %d", job.InitiativeID, job.MaxUserID)
 	}
 
+	// The job may run later than it was queued (retries, a stopped worker): by then
+	// the initiative may be hidden, cancelled or past the poll. Voting buttons must
+	// not go out then, and there is nothing to retry.
 	initiative, err := p.Initiatives.Polling(ctx, job.InitiativeID)
+	if errors.Is(err, initiatives.ErrNotFound) {
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("poll invite initiative: %w", err)
+	}
+	if initiative.Stage != "poll" {
+		return nil
 	}
 	house, err := p.Houses.House(ctx, initiative.HouseID)
 	if err != nil {

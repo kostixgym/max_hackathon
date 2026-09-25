@@ -53,11 +53,6 @@ func (s *Store) EnqueueTx(ctx context.Context, tx pgx.Tx, jobs ...Job) error {
 			return fmt.Errorf("job %d payload: %w", i, err)
 		}
 
-		runAt := j.RunAt
-		if runAt.IsZero() {
-			runAt = time.Now()
-		}
-
 		var dedup any
 		if j.DedupKey != "" {
 			dedup = j.DedupKey
@@ -151,11 +146,16 @@ func (s *Store) Retry(ctx context.Context, id string, jobErr error, pause time.D
 	return nil
 }
 
-// ResetStale requeues jobs stuck in 'running' after a worker crash. It is called
-// once on worker start; ten minutes is longer than any healthy handler.
+// ResetStale requeues jobs stuck in 'running' after a worker crash; ten minutes is
+// longer than any healthy handler, so a job of a live worker is never taken away.
+// A job that has spent its attempts fails: a job that kills the worker every time
+// must not loop forever.
 func (s *Store) ResetStale(ctx context.Context) (int64, error) {
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE jobs SET status = 'queued', updated_at = now()
+		UPDATE jobs
+		SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'queued' END,
+		    last_error = CASE WHEN attempts >= max_attempts THEN 'stuck in running' ELSE last_error END,
+		    updated_at = now()
 		WHERE status = 'running' AND updated_at < now() - interval '10 minutes'`)
 	if err != nil {
 		return 0, fmt.Errorf("reset stale jobs: %w", err)

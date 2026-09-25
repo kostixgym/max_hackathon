@@ -87,10 +87,11 @@ func (s *Store) IsVerifiedOwnerIn(ctx context.Context, userID, houseID string) (
 	return len(links) > 0, nil
 }
 
-// IsVerifiedMemberIn reports whether the user has a verified link (resident or
-// owner) to any premise of the house: the audience that sees initiatives and
-// their progress (docs/04, решение 19).
-func (s *Store) IsVerifiedMemberIn(ctx context.Context, userID, houseID string) (bool, error) {
+// MayViewInitiatives reports whether the user sees the initiatives of the house and
+// their poll progress: a verified member, resident or owner (docs/04, решение 19),
+// or staff of the house's management organization. The progress holds only sums
+// in м², exactly what the company may see (решение 43).
+func (s *Store) MayViewInitiatives(ctx context.Context, userID, houseID string) (bool, error) {
 	links, err := s.memberships(ctx, userID)
 	if err != nil {
 		return false, err
@@ -102,16 +103,25 @@ func (s *Store) IsVerifiedMemberIn(ctx context.Context, userID, houseID string) 
 			premiseIDs = append(premiseIDs, m.premiseID)
 		}
 	}
-	if len(premiseIDs) == 0 {
-		return false, nil
+	if len(premiseIDs) > 0 {
+		premises, err := s.registry.Premises(ctx, premiseIDs)
+		if err != nil {
+			return false, err
+		}
+		if slices.ContainsFunc(premises, func(p registry.Premise) bool { return p.House.ID == houseID }) {
+			return true, nil
+		}
 	}
 
-	premises, err := s.registry.Premises(ctx, premiseIDs)
+	house, err := s.registry.House(ctx, houseID)
+	if errors.Is(err, registry.ErrNotFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
 
-	return slices.ContainsFunc(premises, func(p registry.Premise) bool { return p.House.ID == houseID }), nil
+	return s.isStaff(ctx, userID, house)
 }
 
 // Recipient is one addressee of a house mailing.
@@ -119,58 +129,42 @@ type Recipient = initiatives.Recipient
 
 // VerifiedOwnerRecipients returns the verified owners of the house with their
 // MAX ids: the poll invitation with voting buttons goes exactly to them
-// (docs/02, шаг 2).
+// (docs/02, шаг 2). Only owners of the current registry version are asked for,
+// so the query reads the links of one house, not of the whole platform.
 func (s *Store) VerifiedOwnerRecipients(ctx context.Context, houseID string) ([]Recipient, error) {
+	owners, err := s.registry.HouseOwners(ctx, houseID)
+	if err != nil {
+		return nil, err
+	}
+	if len(owners) == 0 {
+		return []Recipient{}, nil
+	}
+	ownerIDs := make([]string, 0, len(owners))
+	for _, o := range owners {
+		ownerIDs = append(ownerIDs, o.ID)
+	}
+
 	rows, err := s.pool.Query(ctx, `
-		SELECT m.user_id::text, u.max_user_id, m.owner_id::text, m.premise_id::text
+		SELECT m.user_id::text, u.max_user_id, m.owner_id::text
 		FROM memberships m
 		JOIN users u ON u.id = m.user_id
-		WHERE m.role = 'owner' AND m.status = 'verified' AND m.owner_id IS NOT NULL
-		ORDER BY m.created_at`)
+		WHERE m.owner_id = ANY($1::uuid[]) AND m.role = 'owner' AND m.status = 'verified'
+		ORDER BY m.created_at`, ownerIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list owner recipients: %w", err)
 	}
 	defer rows.Close()
 
-	type row struct {
-		userID    string
-		maxUserID int64
-		ownerID   string
-		premiseID string
-	}
-	var all []row
+	result := make([]Recipient, 0)
 	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.userID, &r.maxUserID, &r.ownerID, &r.premiseID); err != nil {
+		var r Recipient
+		if err := rows.Scan(&r.UserID, &r.MaxUserID, &r.OwnerID); err != nil {
 			return nil, fmt.Errorf("scan owner recipient: %w", err)
 		}
-		all = append(all, r)
+		result = append(result, r)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("list owner recipients: %w", err)
-	}
-	if len(all) == 0 {
-		return []Recipient{}, nil
-	}
-
-	premiseIDs := make([]string, 0, len(all))
-	for _, r := range all {
-		premiseIDs = append(premiseIDs, r.premiseID)
-	}
-	premises, err := s.registry.Premises(ctx, premiseIDs)
-	if err != nil {
-		return nil, err
-	}
-	housePremise := make(map[string]bool, len(premises))
-	for _, p := range premises {
-		housePremise[p.ID] = p.House.ID == houseID
-	}
-
-	result := make([]Recipient, 0, len(all))
-	for _, r := range all {
-		if housePremise[r.premiseID] {
-			result = append(result, Recipient{UserID: r.userID, MaxUserID: r.maxUserID, OwnerID: r.ownerID})
-		}
 	}
 
 	return result, nil
@@ -178,6 +172,10 @@ func (s *Store) VerifiedOwnerRecipients(ctx context.Context, houseID string) ([]
 
 // ErrNotDemo means the endpoint works only in a demo house.
 var ErrNotDemo = errors.New("house is not a demo house")
+
+// ErrOwnerTaken means the owner record is already confirmed for another account
+// (инвариант 9): the conflict is for the management company to resolve.
+var ErrOwnerTaken = errors.New("owner is already confirmed for another account")
 
 // ConfirmDemoOwner links the user to an owner of the premise in the current
 // registry version (docs/01, «Как это проверит жюри»: auto-confirmation in the
@@ -229,7 +227,7 @@ func (s *Store) ConfirmDemoOwner(ctx context.Context, userID, houseID, premiseNu
 		// Two users claimed the same owner record: the conflict goes to the
 		// management company, as in invariant 9.
 		if isUniqueViolation(err) {
-			return OwnerLink{}, fmt.Errorf("owner %s is already confirmed for another account", owner.ID)
+			return OwnerLink{}, fmt.Errorf("%w: owner %s", ErrOwnerTaken, owner.ID)
 		}
 
 		return OwnerLink{}, fmt.Errorf("confirm demo owner: %w", err)

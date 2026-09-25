@@ -24,24 +24,27 @@ var ErrNotApplied = errors.New("house has no applied registry version")
 // CurrentSnapshot returns the current registry snapshot of the house.
 func (s *Store) CurrentSnapshot(ctx context.Context, houseID string) (Snapshot, error) {
 	var snap Snapshot
+	// Without an applied version the LEFT JOIN gives NULL in all three columns.
 	var uploadID *string
+	var version *int
+	var total *int64
 	err := s.pool.QueryRow(ctx, `
 		SELECT ru.id::text, ru.version, ru.total_area_centi
 		FROM houses h
 		LEFT JOIN registry_uploads ru
 		     ON ru.house_id = h.id AND ru.version = h.current_registry_version
 		WHERE h.id = $1::uuid`, houseID,
-	).Scan(&uploadID, &snap.Version, &snap.TotalAreaCenti)
+	).Scan(&uploadID, &version, &total)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return snap, ErrNotFound
 	}
 	if err != nil {
 		return snap, fmt.Errorf("current snapshot: %w", err)
 	}
-	if uploadID == nil {
+	if uploadID == nil || version == nil || total == nil {
 		return snap, ErrNotApplied
 	}
-	snap.UploadID = *uploadID
+	snap.UploadID, snap.Version, snap.TotalAreaCenti = *uploadID, *version, *total
 
 	return snap, nil
 }

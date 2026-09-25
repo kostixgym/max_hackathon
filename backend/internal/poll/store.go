@@ -9,11 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/initiatives"
+	"maxhackathon/backend/internal/platform/db"
 	"maxhackathon/backend/internal/registry"
 	"maxhackathon/backend/internal/rules"
 )
@@ -59,6 +62,7 @@ const (
 // Store reads and writes poll_votes.
 type Store struct {
 	pool      *pgxpool.Pool
+	tx        *db.TransactionManager
 	polling   Polling
 	owners    Owners
 	snapshots Snapshots
@@ -66,7 +70,7 @@ type Store struct {
 
 // NewStore creates a poll store.
 func NewStore(pool *pgxpool.Pool, polling Polling, owners Owners, snapshots Snapshots) *Store {
-	return &Store{pool: pool, polling: polling, owners: owners, snapshots: snapshots}
+	return &Store{pool: pool, tx: db.NewTransactionManager(pool), polling: polling, owners: owners, snapshots: snapshots}
 }
 
 // CastInput is one vote or vote change from the chat or the mini-app.
@@ -74,8 +78,15 @@ type CastInput struct {
 	InitiativeID string
 	UserID       string
 	Choice       string // for / against
-	// Survey (optional): how the owner plans to vote officially and whether they
-	// are ready to help collect paper ballots.
+	// Survey is asked of "for" voters in the mini-app. Nil keeps the stored answers:
+	// pressing «Поддерживаю» in the chat once more must not erase them. A vote
+	// «против» always clears the survey (инвариант 7).
+	Survey *Survey
+}
+
+// Survey: how the owner plans to vote officially and whether they are ready to
+// help collect paper ballots.
+type Survey struct {
 	OfficialChannel string // "" / gosuslugi / paper
 	WillingToHelp   bool
 }
@@ -93,6 +104,13 @@ type CastResult struct {
 func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) {
 	if in.Choice != ChoiceFor && in.Choice != ChoiceAgainst {
 		return CastResult{}, fmt.Errorf("invalid choice %q", in.Choice)
+	}
+	if in.Survey != nil {
+		switch in.Survey.OfficialChannel {
+		case "", ChannelGosuslugi, ChannelPaper:
+		default:
+			return CastResult{}, fmt.Errorf("invalid official channel %q", in.Survey.OfficialChannel)
+		}
 	}
 
 	initiative, err := s.polling.Polling(ctx, in.InitiativeID)
@@ -114,57 +132,75 @@ func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) 
 		return CastResult{}, err
 	}
 
-	channel := in.OfficialChannel
-	if channel != "" && channel != ChannelGosuslugi && channel != ChannelPaper {
-		return CastResult{}, fmt.Errorf("invalid official channel %q", channel)
-	}
-	// Инвариант 7 (docs/04): the survey exists only for "for" votes.
-	willing := in.WillingToHelp && in.Choice == ChoiceFor
-	if in.Choice == ChoiceAgainst {
-		channel = ""
-	}
-
-	var channelValue any
-	if channel != "" {
-		channelValue = channel
-	}
-
 	// One vote row per owner record: a user with several premises votes with each
-	// share, and the weights sum (docs/01, «Особые случаи»).
-	result := CastResult{Choice: in.Choice}
-	totalWeight := new(big.Rat)
+	// share, and the weights sum (docs/01, «Особые случаи»). The weight comes from the
+	// initiative's snapshot; an owner record missing from it (a flat bought after the
+	// initiative was created) does not vote, the user's other premises still do.
+	type share struct {
+		link     access.OwnerLink
+		num, den int64
+	}
+	shares := make([]share, 0, len(links))
 	for _, link := range links {
-		weightNum, weightDen, err := s.snapshots.OwnerWeightInSnapshot(ctx, initiative.RegistryUploadID, link.OwnerID)
+		num, den, err := s.snapshots.OwnerWeightInSnapshot(ctx, initiative.RegistryUploadID, link.OwnerID)
 		if errors.Is(err, registry.ErrNotFound) {
-			return CastResult{}, ErrNoWeight
+			continue
 		}
 		if err != nil {
 			return CastResult{}, err
 		}
-
-		_, err = s.pool.Exec(ctx, `
-			INSERT INTO poll_votes (initiative_id, owner_id, user_id, choice,
-			                        weight_num, weight_den, official_channel, willing_to_help)
-			VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8)
-			ON CONFLICT (initiative_id, owner_id) DO UPDATE
-			SET choice = EXCLUDED.choice, user_id = EXCLUDED.user_id,
-			    weight_num = EXCLUDED.weight_num, weight_den = EXCLUDED.weight_den,
-			    official_channel = EXCLUDED.official_channel, willing_to_help = EXCLUDED.willing_to_help,
-			    updated_at = now()`,
-			in.InitiativeID, link.OwnerID, in.UserID, in.Choice, weightNum, weightDen, channelValue, willing)
-		if err != nil {
-			return CastResult{}, fmt.Errorf("cast vote: %w", err)
-		}
-
-		totalWeight.Add(totalWeight, new(big.Rat).SetFrac64(weightNum, weightDen))
-		if result.PremiseNumber == "" {
-			result.PremiseNumber = link.PremiseNumber
-		} else {
-			result.PremiseNumber += ", " + link.PremiseNumber
-		}
+		shares = append(shares, share{link: link, num: num, den: den})
+	}
+	if len(shares) == 0 {
+		return CastResult{}, ErrNoWeight
 	}
 
-	result.WeightNum, result.WeightDen = fraction(totalWeight)
+	// Survey columns: «против» always clears them (инвариант 7), «за» replaces them
+	// only when a survey is given.
+	replaceSurvey := in.Choice == ChoiceAgainst || in.Survey != nil
+	var channel any
+	willing := false
+	if in.Choice == ChoiceFor && in.Survey != nil {
+		if in.Survey.OfficialChannel != "" {
+			channel = in.Survey.OfficialChannel
+		}
+		willing = in.Survey.WillingToHelp
+	}
+
+	// All premises of the user make one vote: written together or not at all. The
+	// weight is copied once and never changes (решение 54), so a re-vote keeps it.
+	err = s.tx.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		for _, sh := range shares {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO poll_votes (initiative_id, owner_id, user_id, choice,
+				                        weight_num, weight_den, official_channel, willing_to_help)
+				VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8)
+				ON CONFLICT (initiative_id, owner_id) DO UPDATE
+				SET choice = EXCLUDED.choice, user_id = EXCLUDED.user_id,
+				    official_channel = CASE WHEN $9 THEN EXCLUDED.official_channel ELSE poll_votes.official_channel END,
+				    willing_to_help = CASE WHEN $9 THEN EXCLUDED.willing_to_help ELSE poll_votes.willing_to_help END,
+				    updated_at = now()`,
+				in.InitiativeID, sh.link.OwnerID, in.UserID, in.Choice, sh.num, sh.den,
+				channel, willing, replaceSurvey); err != nil {
+				return fmt.Errorf("cast vote: %w", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return CastResult{}, err
+	}
+
+	result := CastResult{Choice: in.Choice}
+	total := new(big.Rat)
+	numbers := make([]string, 0, len(shares))
+	for _, sh := range shares {
+		total.Add(total, new(big.Rat).SetFrac64(sh.num, sh.den))
+		numbers = append(numbers, sh.link.PremiseNumber)
+	}
+	result.PremiseNumber = strings.Join(numbers, ", ")
+	result.WeightNum, result.WeightDen = fraction(total)
 
 	return result, nil
 }

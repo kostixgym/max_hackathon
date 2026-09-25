@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -27,7 +28,7 @@ func (f fakeAccessChecks) IsVerifiedOwnerIn(context.Context, string, string) (bo
 	return f.owner, nil
 }
 
-func (f fakeAccessChecks) IsVerifiedMemberIn(context.Context, string, string) (bool, error) {
+func (f fakeAccessChecks) MayViewInitiatives(context.Context, string, string) (bool, error) {
 	return f.member, nil
 }
 
@@ -81,6 +82,12 @@ type nilReadiness struct{}
 func (nilReadiness) Ping(context.Context) error { return nil }
 
 func newStage1Server(checks fakeAccessChecks, inits *fakeInitiativesAPI, progress fakePollProgress) http.Handler {
+	return newStage1ServerWithDemo(checks, inits, progress, fakeDemoMembership{})
+}
+
+func newStage1ServerWithDemo(checks fakeAccessChecks, inits *fakeInitiativesAPI, progress fakePollProgress,
+	demo fakeDemoMembership,
+) http.Handler {
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	return NewHandler(Deps{
@@ -88,7 +95,7 @@ func newStage1Server(checks fakeAccessChecks, inits *fakeInitiativesAPI, progres
 			Log: log, Now: time.Now},
 		Houses: fakeHouses{}, Profiles: fakeProfiles{}, DB: nilReadiness{}, Log: log,
 		Access: checks, Initiatives: inits, PollStarter: inits, PollProgress: progress,
-		DemoMembers: fakeDemoMembership{},
+		DemoMembers: demo,
 	})
 }
 
@@ -143,13 +150,33 @@ func TestCreateInitiative(t *testing.T) {
 }
 
 func TestStartPoll(t *testing.T) {
-	started := initiatives.Initiative{ID: "init-1", Stage: "poll", PollEndsAt: ptrTime(time.Now().Add(24 * time.Hour))}
+	// The dev caller "42" is the user "user-42" (fakeUsers).
+	started := initiatives.Initiative{ID: "init-1", Stage: "poll", PollEndsAt: ptrTime(time.Now().Add(24 * time.Hour)),
+		InitiatorUserID: ptrString("user-42")}
 	inits := &fakeInitiativesAPI{started: started}
 	h := newStage1Server(fakeAccessChecks{owner: true}, inits, fakePollProgress{})
 
-	rec := callJSON(h, http.MethodPost, "/api/v1/initiatives/init-1/start-poll", `{"days":7}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
+	for _, body := range []string{`{"days":7}`, `{}`, ""} {
+		rec := callJSON(h, http.MethodPost, "/api/v1/initiatives/init-1/start-poll", body)
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"is_initiator":true`) {
+			t.Fatalf("body %q: status = %d, body = %s", body, rec.Code, rec.Body)
+		}
+	}
+
+	// A present body must be valid: the 30-day limit cannot be bypassed.
+	for _, body := range []string{`{"days":365}`, `{"days":-1}`, `{"days":"7"}`, `{"days":`} {
+		rec := callJSON(h, http.MethodPost, "/api/v1/initiatives/init-1/start-poll", body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("body %q: status = %d, want 400; body = %s", body, rec.Code, rec.Body)
+		}
+	}
+
+	// is_initiator is about the caller, not about the initiative having an initiator.
+	other := &fakeInitiativesAPI{started: initiatives.Initiative{ID: "init-1", Stage: "poll", InitiatorUserID: ptrString("user-7")}}
+	h = newStage1Server(fakeAccessChecks{owner: true}, other, fakePollProgress{})
+	rec := callJSON(h, http.MethodPost, "/api/v1/initiatives/init-1/start-poll", `{}`)
+	if !strings.Contains(rec.Body.String(), `"is_initiator":false`) {
+		t.Fatalf("another initiator: body = %s", rec.Body)
 	}
 
 	// Wrong stage: 409.
@@ -226,6 +253,16 @@ func TestDemoMembershipEndpoint(t *testing.T) {
 	if rec.Code != http.StatusForbidden || !errors.Is(demo.err, access.ErrNotDemo) {
 		t.Fatalf("not demo: status = %d", rec.Code)
 	}
+
+	// Two testers on one owner record (инвариант 9): an explained 409, not a 500.
+	taken := fakeDemoMembership{err: fmt.Errorf("%w: owner o-1", access.ErrOwnerTaken)}
+	h = newStage1ServerWithDemo(fakeAccessChecks{}, &fakeInitiativesAPI{}, fakePollProgress{}, taken)
+	rec = callJSON(h, http.MethodPost, "/api/v1/houses/demo-slug/demo-membership", `{"premise_number":"45"}`)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "owner_taken") {
+		t.Fatalf("owner taken: status = %d, body = %s", rec.Code, rec.Body)
+	}
 }
 
 func ptrTime(t time.Time) *time.Time { return &t }
+
+func ptrString(s string) *string { return &s }

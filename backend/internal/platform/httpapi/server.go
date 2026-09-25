@@ -29,7 +29,7 @@ type Readiness interface {
 // AccessChecks answers permission questions of the endpoints (the access module).
 type AccessChecks interface {
 	IsVerifiedOwnerIn(ctx context.Context, userID, houseID string) (bool, error)
-	IsVerifiedMemberIn(ctx context.Context, userID, houseID string) (bool, error)
+	MayViewInitiatives(ctx context.Context, userID, houseID string) (bool, error)
 }
 
 // Deps are the dependencies of the API.

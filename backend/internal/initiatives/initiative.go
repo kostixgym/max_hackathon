@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"maxhackathon/backend/internal/notify"
@@ -110,10 +111,11 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 			description = in.Description
 		}
 
+		// An owner who creates the initiative is both its author and initiator (docs/04, решение 11).
 		err := tx.QueryRow(ctx, `
 			INSERT INTO initiatives (house_id, template_id, title, description, stage,
-			                         registry_upload_id, initiator_user_id)
-			VALUES ($1::uuid, $2::uuid, $3, $4, 'draft', $5::uuid, $6::uuid)
+			                         registry_upload_id, initiator_user_id, author_user_id)
+			VALUES ($1::uuid, $2::uuid, $3, $4, 'draft', $5::uuid, $6::uuid, $6::uuid)
 			RETURNING id::text`, in.HouseID, tpl.ID, in.Title, description, snap.UploadID, in.InitiatorUserID,
 		).Scan(&created.ID)
 		if err != nil {
@@ -137,6 +139,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 
 	created.HouseID = in.HouseID
 	created.Title = in.Title
+	created.Description = in.Description
 	created.Stage = "draft"
 	created.RegistryUploadID = snap.UploadID
 	created.InitiatorUserID = &in.InitiatorUserID
@@ -217,6 +220,9 @@ type Polling struct {
 // Polling returns the poll-relevant fields of the initiative.
 func (s *Service) Polling(ctx context.Context, id string) (Polling, error) {
 	var p Polling
+	if !validID(id) {
+		return p, ErrNotFound
+	}
 	var pollEndsAt *time.Time
 	err := s.pool.QueryRow(ctx, `
 		SELECT id::text, house_id::text, title, stage, poll_ends_at, registry_upload_id::text
@@ -250,6 +256,9 @@ type Initiative struct {
 // Get returns the initiative by id. Hidden initiatives are ErrNotFound.
 func (s *Service) Get(ctx context.Context, id string) (Initiative, error) {
 	var in Initiative
+	if !validID(id) {
+		return in, ErrNotFound
+	}
 	var description *string
 	err := s.pool.QueryRow(ctx, `
 		SELECT id::text, house_id::text, template_id::text, title, description, stage,
@@ -269,4 +278,12 @@ func (s *Service) Get(ctx context.Context, id string) (Initiative, error) {
 	}
 
 	return in, nil
+}
+
+// validID reports whether id can be an initiative id. Ids come from URLs and button
+// payloads: a malformed one means «not found» without a query.
+func validID(id string) bool {
+	var u pgtype.UUID
+
+	return u.Scan(id) == nil && u.Valid
 }
