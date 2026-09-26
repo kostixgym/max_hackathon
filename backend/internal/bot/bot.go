@@ -50,6 +50,11 @@ type Bot struct {
 	// the voter's current choice (решение 68). Without them only a notification is shown.
 	Initiatives PollingReader
 	HousesByID  HouseReader
+
+	// DevMode enables /id: it tells the user their MAX id, which the API of the
+	// development mode accepts in X-Dev-User-Id. Until the mini-app is ready this is
+	// the only way to act in the API as a real MAX account. The id is not logged.
+	DevMode bool
 }
 
 // openAppPayload is what MAX accepts in the payload of an open_app button;
@@ -70,12 +75,14 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 			return
 		}
 		cmd := u.GetCommand()
-		if cmd.Command == "/start" {
+		switch {
+		case cmd.Command == "/start":
 			b.start(ctx, u, cmd.RemainingText)
-
-			return
+		case cmd.Command == "/id" && b.DevMode:
+			b.send(ctx, u, fmt.Sprintf("Ваш MAX id: %d\n\nКоманда работает только в режиме разработки (DEV_MODE).", u.UserID), nil)
+		default:
+			b.help(ctx, u)
 		}
-		b.help(ctx, u)
 	}
 }
 

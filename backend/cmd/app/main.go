@@ -135,6 +135,7 @@ func run() error {
 				votes:       polls,
 				initiatives: initService,
 				notifier:    notifier,
+				devMode:     cfg.DevMode,
 			}, log)
 		})
 	}
@@ -181,6 +182,7 @@ type botDeps struct {
 	votes       bot.Votes
 	initiatives bot.PollingReader
 	notifier    botNotifier
+	devMode     bool
 }
 
 // botNotifier is everything the bot runtime needs from the notify module:
@@ -256,6 +258,7 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 			Answers:     api.Messages,
 			Initiatives: deps.initiatives,
 			HousesByID:  deps.houseByID,
+			DevMode:     deps.devMode,
 		},
 		Log:     log,
 		BotID:   me.UserID,
