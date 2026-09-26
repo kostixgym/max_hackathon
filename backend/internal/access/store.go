@@ -30,6 +30,7 @@ var ErrForbidden = errors.New("forbidden")
 type Registry interface {
 	House(ctx context.Context, id string) (registry.HouseRef, error)
 	Premises(ctx context.Context, ids []string) ([]registry.Premise, error)
+	PremiseByNumber(ctx context.Context, houseID, number string) (registry.Premise, error)
 	PremiseOwners(ctx context.Context, premiseID string) ([]registry.Owner, error)
 	HouseOwners(ctx context.Context, houseID string) ([]registry.Owner, error)
 	Owners(ctx context.Context, ids []string) ([]registry.Owner, error)

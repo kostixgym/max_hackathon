@@ -180,13 +180,14 @@ func TestMeetingResultsAreWriteOnce(t *testing.T) {
 		WHERE id = $1`, meetingID)
 	must(err)
 
-	var resultID string
+	var resultID, finalizerID string
+	must(tx.QueryRow(ctx, `INSERT INTO users (max_user_id) VALUES (-424242) RETURNING id`).Scan(&finalizerID))
 	must(tx.QueryRow(ctx, `
 		INSERT INTO meeting_results (meeting_id, agenda_item_id, for_weight_num, for_weight_den,
 		       against_weight_num, against_weight_den, abstain_weight_num, abstain_weight_den,
-		       total_weight_num, total_weight_den, majority_rule, accepted)
-		VALUES ($1, $2, 700000, 1, 0, 1, 0, 1, 1000000, 1, 'two_thirds_of_all', true) RETURNING id`,
-		meetingID, agendaID).Scan(&resultID))
+		       total_weight_num, total_weight_den, majority_rule, accepted, finalized_by)
+		VALUES ($1, $2, 700000, 1, 0, 1, 0, 1, 1000000, 1, 'two_thirds_of_all', true, $3) RETURNING id`,
+		meetingID, agendaID, finalizerID).Scan(&resultID))
 
 	if err := savepoint("update_result", func() error {
 		_, err := tx.Exec(ctx, `UPDATE meeting_results SET accepted = false WHERE id = $1`, resultID)
@@ -201,5 +202,24 @@ func TestMeetingResultsAreWriteOnce(t *testing.T) {
 		return err
 	}); err == nil {
 		t.Fatal("DELETE of a fixed meeting result must be rejected")
+	}
+	// Clearing the finalizer together with anything else is still an edit of the result.
+	if err := savepoint("clear_and_edit", func() error {
+		_, err := tx.Exec(ctx, `UPDATE meeting_results SET finalized_by = NULL, accepted = false WHERE id = $1`, resultID)
+
+		return err
+	}); err == nil {
+		t.Fatal("changing the result while clearing finalized_by must be rejected")
+	}
+
+	// Account deletion (решение 28) clears finalized_by and leaves the result as fixed.
+	_, err = tx.Exec(ctx, `DELETE FROM users WHERE id = $1`, finalizerID)
+	must(err)
+	var finalizedBy *string
+	var accepted bool
+	must(tx.QueryRow(ctx, `SELECT finalized_by::text, accepted FROM meeting_results WHERE id = $1`, resultID).
+		Scan(&finalizedBy, &accepted))
+	if finalizedBy != nil || !accepted {
+		t.Fatalf("after deleting the finalizer: finalized_by = %v, accepted = %v; want NULL and the result kept", finalizedBy, accepted)
 	}
 }

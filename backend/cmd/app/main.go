@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -13,6 +14,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	// Houses keep local time zones (quiet hours, poll deadlines): the zone database
+	// is built in, so it does not depend on the runtime image.
+	_ "time/tzdata"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
@@ -20,12 +24,15 @@ import (
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/bot"
 	"maxhackathon/backend/internal/initiatives"
+	"maxhackathon/backend/internal/notify"
 	"maxhackathon/backend/internal/platform/config"
 	"maxhackathon/backend/internal/platform/db"
 	"maxhackathon/backend/internal/platform/httpapi"
 	"maxhackathon/backend/internal/platform/maxbot"
 	"maxhackathon/backend/internal/platform/security"
+	"maxhackathon/backend/internal/poll"
 	"maxhackathon/backend/internal/registry"
+	"maxhackathon/backend/internal/rules"
 	"maxhackathon/backend/migrations"
 )
 
@@ -71,9 +78,21 @@ func run() error {
 
 	hasher := security.NewHasher(cfg.HMACSecret)
 	// Modules read each other's data only through interfaces; the wiring is here.
+	// access needs the legacy initiatives reader, initiatives.Service needs access
+	// as the poll audience: interfaces on both sides keep the wiring acyclic.
 	houses := registry.NewStore(pool)
+	tm := db.NewTransactionManager(pool)
+	notifier := notify.NewStore(pool)
+	catalog := rules.NewCatalog(pool)
 	users := access.NewStore(pool, houses, initiatives.NewStore(pool))
+	initService := initiatives.NewService(pool, tm, catalog, houses, users, notifier)
+	polls := poll.NewStore(pool, initService, users, houses)
 
+	// Decision types and templates are platform data, not demo data (решение 9):
+	// without them no initiative can be created, so they are seeded on every start.
+	if err := catalog.SeedCatalog(ctx); err != nil {
+		return fmt.Errorf("seed rules catalog: %w", err)
+	}
 	if cfg.SeedDemo {
 		slug, err := houses.SeedDemo(ctx, hasher, cfg.DemoInviteSlug, log)
 		if err != nil {
@@ -97,11 +116,28 @@ func run() error {
 		DB:       pool,
 		Log:      log,
 		DevMode:  cfg.DevMode,
+
+		Access:       users,
+		Initiatives:  initService,
+		PollStarter:  initService,
+		PollProgress: polls,
+		Votes:        polls,
+		DemoMembers:  users,
 	})
 
 	var wg sync.WaitGroup
 	if cfg.BotToken != "" {
-		wg.Go(func() { runBot(ctx, cfg.BotToken, houses, log) })
+		wg.Go(func() {
+			runBot(ctx, cfg.BotToken, botDeps{
+				houses:      houses,
+				houseByID:   houses,
+				users:       users,
+				votes:       polls,
+				initiatives: initService,
+				notifier:    notifier,
+				devMode:     cfg.DevMode,
+			}, log)
+		})
 	}
 
 	srv := &http.Server{
@@ -138,10 +174,35 @@ func run() error {
 	return err
 }
 
-// runBot starts the chat bot. Problems with the MAX API never stop the service:
-// the HTTP API of the mini-app keeps working, the bot retries.
-func runBot(ctx context.Context, token string, houses bot.Houses, log *slog.Logger, opts ...maxapi.Opt) {
-	api, err := maxapi.NewApi(token, opts...)
+// botDeps bundles the domain modules the bot and the worker talk to.
+type botDeps struct {
+	houses      bot.Houses
+	houseByID   bot.HouseReader
+	users       bot.Users
+	votes       bot.Votes
+	initiatives bot.PollingReader
+	notifier    botNotifier
+	devMode     bool
+}
+
+// botNotifier is everything the bot runtime needs from the notify module:
+// the job queue for the worker and markers for the poller.
+type botNotifier interface {
+	notify.Queue
+	maxbot.Markers
+}
+
+// runBot starts the chat bot and the notify worker. Problems with the MAX API
+// never stop the service: the HTTP API of the mini-app keeps working, the bot retries.
+func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, opts ...maxapi.Opt) {
+	// The MAX API certificate chains to the Russian Trusted Root CA (see maxbot.HTTPClient).
+	httpClient, err := maxbot.HTTPClient()
+	if err != nil {
+		log.Error("bot: HTTP client for MAX", "err", err)
+
+		return
+	}
+	api, err := maxapi.NewApi(token, append([]maxapi.Opt{maxapi.WithHTTPClient(httpClient)}, opts...)...)
 	if err != nil {
 		log.Error("bot: create MAX client", "err", err)
 
@@ -166,18 +227,45 @@ func runBot(ctx context.Context, token string, houses bot.Houses, log *slog.Logg
 		log.Warn("bot: webhook subscriptions exist, long polling will get no updates", "count", len(subs.Subscriptions))
 	}
 
+	identity := bot.Identity{UserID: me.UserID, Username: me.Username}
+	inviter := &bot.PollInviter{
+		Messages:    api.Messages,
+		Initiatives: deps.initiatives,
+		Houses:      deps.houseByID,
+		Me:          identity,
+	}
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
+		worker := &notify.Worker{
+			Queue:    deps.notifier,
+			Handlers: map[string]notify.JobHandler{notify.TypePollInvite: inviter.HandleJob},
+			Log:      log,
+		}
+		worker.Run(ctx)
+	})
+
 	log.Info("bot started", "username", me.Username, "bot_id", me.UserID)
 	poller := &maxbot.Poller{
 		Updates: api.Subscriptions,
 		Handler: &bot.Bot{
-			Messages: api.Messages,
-			Houses:   houses,
-			Me:       bot.Identity{UserID: me.UserID, Username: me.Username},
-			Log:      log,
+			Messages:    api.Messages,
+			Houses:      deps.houses,
+			Me:          identity,
+			Log:         log,
+			Users:       deps.users,
+			Votes:       deps.votes,
+			Answers:     api.Messages,
+			Initiatives: deps.initiatives,
+			HousesByID:  deps.houseByID,
+			DevMode:     deps.devMode,
 		},
-		Log: log,
+		Log:     log,
+		BotID:   me.UserID,
+		Markers: deps.notifier,
 	}
 	poller.Run(ctx)
+	wg.Wait()
 	log.Info("bot stopped")
 }
 

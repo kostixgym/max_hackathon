@@ -126,6 +126,52 @@ func TestOwnerDirectoryAccess(t *testing.T) {
 		})
 	}
 
+	viewCases := []struct {
+		name    string
+		userID  string
+		allowed bool
+	}{
+		{"verified resident", resident, true},
+		{"verified owner", owner45, true},
+		{"management company staff (only sums in м², решение 43)", staff, true},
+		{"guest is refused", guest, false},
+		{"pending owner is refused", ownerPending, false},
+		{"user without links is refused", outsider, false},
+	}
+	for _, c := range viewCases {
+		t.Run("initiatives and poll progress: "+c.name, func(t *testing.T) {
+			allowed, err := store.MayViewInitiatives(ctx, c.userID, house.ID)
+			if err != nil || allowed != c.allowed {
+				t.Fatalf("allowed = %v, %v; want %v", allowed, err, c.allowed)
+			}
+		})
+	}
+
+	t.Run("poll invitations go to verified owners only", func(t *testing.T) {
+		recipients, err := store.VerifiedOwnerRecipients(ctx, house.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := map[string]bool{}
+		for _, r := range recipients {
+			got[r.UserID] = true
+			if r.MaxUserID <= 0 || r.OwnerID == "" {
+				t.Fatalf("incomplete recipient %+v", r)
+			}
+		}
+		// Other tests may add owners of their own: only this fixture's users are checked.
+		for _, id := range []string{owner45, initiatorA, initiatorB} {
+			if !got[id] {
+				t.Errorf("verified owner %s is not a recipient", id)
+			}
+		}
+		for _, id := range []string{guest, resident, ownerPending, staff, outsider} {
+			if got[id] {
+				t.Errorf("user %s without a verified owner link is a recipient", id)
+			}
+		}
+	})
+
 	t.Run("unknown premise or house is not found", func(t *testing.T) {
 		if _, err := store.PremiseOwners(ctx, staff, unknownID); !errors.Is(err, ErrNotFound) {
 			t.Fatalf("premise owners: want ErrNotFound, got %v", err)

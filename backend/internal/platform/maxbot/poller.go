@@ -35,6 +35,19 @@ type Poller struct {
 	// Backoff after a failed request: grows from MinBackoff to MaxBackoff.
 	MinBackoff time.Duration
 	MaxBackoff time.Duration
+
+	// BotID and Markers persist the polling position in the database: a restart
+	// continues after the last fully processed batch instead of re-reading the
+	// history. The marker is saved after the whole batch (at-least-once); vote
+	// handlers are idempotent upserts, a repeated greeting is acceptable.
+	BotID   int64
+	Markers Markers
+}
+
+// Markers loads and saves the long-polling position (the notify module).
+type Markers interface {
+	LoadMarker(ctx context.Context, botUserID int64) (int64, error)
+	SaveMarker(ctx context.Context, botUserID int64, marker int64) error
 }
 
 // Run polls until ctx is cancelled. Errors of the MAX API are logged and retried:
@@ -49,6 +62,13 @@ func (p *Poller) Run(ctx context.Context) {
 	}
 
 	var marker int64
+	if p.Markers != nil && p.BotID != 0 {
+		var err error
+		if marker, err = p.Markers.LoadMarker(ctx, p.BotID); err != nil {
+			p.Log.Warn("max: load marker, starting from 0", "err", err)
+		}
+	}
+
 	backoff := minB
 	for ctx.Err() == nil {
 		updates, next, err := p.Updates.GetUpdates(ctx, marker)
@@ -73,6 +93,13 @@ func (p *Poller) Run(ctx context.Context) {
 		marker = next
 		for _, u := range updates {
 			p.handle(ctx, u)
+		}
+		// The batch is fully handled: it is safe to persist the position. A crash
+		// before this point replays the batch, it does not lose its tail.
+		if p.Markers != nil && p.BotID != 0 {
+			if err := p.Markers.SaveMarker(ctx, p.BotID, next); err != nil {
+				p.Log.Error("max: save marker", "err", err)
+			}
 		}
 	}
 }

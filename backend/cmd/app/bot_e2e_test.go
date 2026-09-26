@@ -3,18 +3,26 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 
+	"maxhackathon/backend/internal/access"
+	"maxhackathon/backend/internal/initiatives"
+	"maxhackathon/backend/internal/notify"
+	"maxhackathon/backend/internal/poll"
 	"maxhackathon/backend/internal/registry"
 )
+
+const e2eInitiativeID = "11111111-1111-7111-8111-111111111111"
 
 type e2eHouses struct{}
 
@@ -23,19 +31,84 @@ func (e2eHouses) HouseBySlug(_ context.Context, slug string) (registry.HouseSumm
 		return registry.HouseSummary{}, registry.ErrNotFound
 	}
 
-	return registry.HouseSummary{InviteSlug: slug, Address: "демо-адрес", IsDemo: true}, nil
+	return registry.HouseSummary{ID: "house-1", InviteSlug: slug, Address: "демо-адрес", IsDemo: true}, nil
 }
 
-// fakeMAX emulates the MAX Bot API endpoints the bot uses. It checks what the official
-// client really sends: our unit tests cover the handler, this test covers the wiring.
+func (e2eHouses) House(_ context.Context, id string) (registry.HouseRef, error) {
+	return registry.HouseRef{ID: id, Address: "демо-адрес", IsDemo: true}, nil
+}
+
+type e2eUsers struct{}
+
+func (e2eUsers) EnsureUser(_ context.Context, maxUserID int64) (access.User, error) {
+	return access.User{ID: fmt.Sprintf("user-%d", maxUserID), MaxUserID: maxUserID}, nil
+}
+
+type e2eVotes struct {
+	mu   sync.Mutex
+	cast []poll.CastInput
+}
+
+func (v *e2eVotes) CastVote(_ context.Context, in poll.CastInput) (poll.CastResult, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.cast = append(v.cast, in)
+
+	return poll.CastResult{Choice: in.Choice, PremiseNumber: "45", WeightNum: 2615, WeightDen: 1}, nil
+}
+
+type e2eInitiatives struct{}
+
+func (e2eInitiatives) Polling(_ context.Context, id string) (initiatives.Polling, error) {
+	if id != e2eInitiativeID {
+		return initiatives.Polling{}, initiatives.ErrNotFound
+	}
+
+	return initiatives.Polling{ID: id, HouseID: "house-1", Title: "Видеонаблюдение", Stage: "poll"}, nil
+}
+
+// e2eNotifier keeps markers in memory and never has jobs: the worker idles.
+type e2eNotifier struct {
+	mu     sync.Mutex
+	marker int64
+}
+
+func (n *e2eNotifier) Claim(context.Context, int) ([]notify.ClaimedJob, error) {
+	return nil, nil
+}
+func (n *e2eNotifier) Complete(context.Context, string) error { return nil }
+func (n *e2eNotifier) Retry(context.Context, string, error, time.Duration) error {
+	return nil
+}
+func (n *e2eNotifier) ResetStale(context.Context) (int64, error) { return 0, nil }
+func (n *e2eNotifier) Purge(context.Context) (int64, error)      { return 0, nil }
+func (n *e2eNotifier) LoadMarker(context.Context, int64) (int64, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	return n.marker, nil
+}
+func (n *e2eNotifier) SaveMarker(_ context.Context, _ int64, marker int64) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.marker = marker
+
+	return nil
+}
+
+// fakeMAX emulates the MAX Bot API endpoints the bot uses. It checks what the
+// official client really sends: unit tests cover handlers, this test covers wiring.
 type fakeMAX struct {
-	mu       sync.Mutex
-	token    string
-	badAuth  bool
-	polls    []string // marker query parameter of every GET /updates
-	sentTo   []string // chat_id of every POST /messages
-	sentBody map[string]any
-	sent     chan struct{}
+	mu         sync.Mutex
+	token      string
+	badAuth    bool
+	polls      []string // marker query parameter of every GET /updates
+	sentTo     []string // user_id of every POST /messages
+	sentBodies []map[string]any
+	answers    []string // notification text of every POST /answers
+	edits      []string // text of the message updated by every POST /answers
+	sent       chan struct{}
+	answered   chan struct{}
 }
 
 func (f *fakeMAX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -54,9 +127,10 @@ func (f *fakeMAX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"subscriptions":[]}`)
 	case r.Method == http.MethodGet && r.URL.Path == "/updates":
 		f.polls = append(f.polls, r.URL.Query().Get("marker"))
-		if len(f.polls) == 1 {
-			// A neighbour writes in the group chat of the house (the bot must stay silent there),
-			// then a user starts the bot by the house link.
+		switch len(f.polls) {
+		case 1:
+			// A neighbour writes in the group chat of the house (the bot must stay
+			// silent there), then a user starts the bot by the house link.
 			_, _ = io.WriteString(w, `{"marker":5,"updates":[
 				{"update_type":"message_created","timestamp":1,"message":{
 					"sender":{"user_id":43,"first_name":"Пётр"},
@@ -66,17 +140,45 @@ func (f *fakeMAX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					"chat_id":7,"user":{"user_id":42,"first_name":"Анна"},"payload":"demo-slug_1"}]}`)
 
 			return
+		case 2:
+			// The user presses «Поддерживаю» on a poll message.
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"marker":8,"updates":[
+				{"update_type":"message_callback","timestamp":3,
+					"callback":{"timestamp":3,"callback_id":"cb-1","payload":"pv:%s:for",
+						"user":{"user_id":42,"first_name":"Анна"}}}]}`, e2eInitiativeID))
+
+			return
 		}
 		f.mu.Unlock()
 		time.Sleep(20 * time.Millisecond) // a real server holds the request until updates or timeout
 		f.mu.Lock()
-		_, _ = io.WriteString(w, `{"marker":5,"updates":[]}`)
+		// An empty response keeps the current position.
+		_, _ = fmt.Fprintf(w, `{"marker":%s,"updates":[]}`, f.markerParam(r))
 	case r.Method == http.MethodPost && r.URL.Path == "/messages":
 		f.sentTo = append(f.sentTo, r.URL.Query().Get("chat_id"))
-		_ = json.NewDecoder(r.Body).Decode(&f.sentBody)
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.sentBodies = append(f.sentBodies, body)
 		_, _ = io.WriteString(w, `{"message":{}}`)
 		select {
 		case f.sent <- struct{}{}:
+		default:
+		}
+	case r.Method == http.MethodPost && r.URL.Path == "/answers":
+		var body struct {
+			Notification string `json:"notification"`
+			Message      *struct {
+				Text string `json:"text"`
+			} `json:"message"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.answers = append(f.answers, body.Notification)
+		if body.Message != nil {
+			f.edits = append(f.edits, body.Message.Text)
+		}
+		_, _ = io.WriteString(w, `{"success":true}`)
+		select {
+		case f.answered <- struct{}{}:
 		default:
 		}
 	default:
@@ -84,33 +186,54 @@ func (f *fakeMAX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (f *fakeMAX) markerParam(r *http.Request) string {
+	if m := r.URL.Query().Get("marker"); m != "" {
+		return m
+	}
+
+	return "0"
+}
+
 func TestBotEndToEndWithFakeMAX(t *testing.T) {
-	fake := &fakeMAX{token: "test-token", sent: make(chan struct{}, 1)}
+	fake := &fakeMAX{token: "test-token", sent: make(chan struct{}, 1), answered: make(chan struct{}, 1)}
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
+
+	votes := &e2eVotes{}
+	notifier := &e2eNotifier{}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		runBot(ctx, "test-token", e2eHouses{}, slog.New(slog.NewTextHandler(io.Discard, nil)), maxapi.WithBaseURL(srv.URL))
+		runBot(ctx, "test-token", botDeps{
+			houses:      e2eHouses{},
+			houseByID:   e2eHouses{},
+			users:       e2eUsers{},
+			votes:       votes,
+			initiatives: e2eInitiatives{},
+			notifier:    notifier,
+		}, slog.New(slog.NewTextHandler(io.Discard, nil)), maxapi.WithBaseURL(srv.URL))
 		close(done)
 	}()
 
-	select {
-	case <-fake.sent:
-	case <-time.After(5 * time.Second):
-		t.Fatal("bot did not answer bot_started")
+	waitFor := func(ch chan struct{}, what string) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s did not happen", what)
+		}
 	}
-	time.Sleep(100 * time.Millisecond) // let the poller make a few more calls
+	waitFor(fake.sent, "greeting for bot_started")
+	waitFor(fake.answered, "answer to the vote callback")
+	time.Sleep(100 * time.Millisecond) // let the poller persist the marker
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("bot did not stop after context cancel")
-	}
+	waitFor(done, "bot stop")
 
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
+	votes.mu.Lock()
+	defer votes.mu.Unlock()
 
 	if fake.badAuth {
 		t.Fatal("request without the bot token in Authorization")
@@ -120,9 +243,9 @@ func TestBotEndToEndWithFakeMAX(t *testing.T) {
 	}
 
 	// attachments[0] = inline keyboard, buttons[0][0] = open_app with the house slug.
-	atts, _ := fake.sentBody["attachments"].([]any)
+	atts, _ := fake.sentBodies[0]["attachments"].([]any)
 	if len(atts) != 1 {
-		t.Fatalf("attachments = %v", fake.sentBody["attachments"])
+		t.Fatalf("attachments = %v", fake.sentBodies[0]["attachments"])
 	}
 	att := atts[0].(map[string]any)
 	btn := att["payload"].(map[string]any)["buttons"].([]any)[0].([]any)[0].(map[string]any)
@@ -131,7 +254,23 @@ func TestBotEndToEndWithFakeMAX(t *testing.T) {
 		t.Fatalf("unexpected keyboard: %v", att)
 	}
 
-	if len(fake.polls) < 2 || (fake.polls[0] != "" && fake.polls[0] != "0") || fake.polls[1] != "5" {
-		t.Fatalf("markers of /updates calls = %v, want first empty/0 then 5", fake.polls)
+	// The vote went through the poll module and the user got a weighted receipt.
+	if len(votes.cast) != 1 || votes.cast[0].InitiativeID != e2eInitiativeID || votes.cast[0].Choice != poll.ChoiceFor {
+		t.Fatalf("votes cast = %+v", votes.cast)
+	}
+	if len(fake.answers) != 1 {
+		t.Fatalf("answers = %q", fake.answers)
+	}
+	if !strings.Contains(fake.answers[0], "Голос учтён") || !strings.Contains(fake.answers[0], "26,15") {
+		t.Fatalf("answer = %q, want the weighted receipt", fake.answers[0])
+	}
+	// The poll message itself is updated with the current choice (решение 68).
+	if len(fake.edits) != 1 || !strings.Contains(fake.edits[0], "Ваш голос: «за», 26,15 м²") {
+		t.Fatalf("message updates = %q, want the poll message with the current choice", fake.edits)
+	}
+
+	// The marker advanced: the callback batch was consumed and persisted.
+	if notifier.marker != 8 {
+		t.Fatalf("saved marker = %d, want 8", notifier.marker)
 	}
 }

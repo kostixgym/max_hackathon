@@ -157,3 +157,29 @@ func TestIgnoresBotsAndOtherUpdates(t *testing.T) {
 		t.Fatalf("sent %d messages, want 0", len(msgs.sent))
 	}
 }
+
+// /id helps to act in the dev-mode API as a real MAX account; on a real server
+// (DevMode off) it is an ordinary unknown command.
+func TestIDCommandOnlyInDevMode(t *testing.T) {
+	b, msgs := newBot()
+	b.DevMode = true
+	b.Handle(context.Background(), message(model.ChatTypeDialog, "/id"))
+	if len(msgs.sent) != 1 || !strings.Contains(msgs.sent[0].body.Text, "Ваш MAX id: 42") ||
+		len(msgs.sent[0].body.Attachments) != 0 {
+		t.Fatalf("dev mode: %+v", msgs.sent)
+	}
+
+	b, msgs = newBot()
+	b.Handle(context.Background(), message(model.ChatTypeDialog, "/id"))
+	if len(msgs.sent) != 1 || strings.Contains(msgs.sent[0].body.Text, "MAX id") {
+		t.Fatalf("without dev mode the id must not be shown: %+v", msgs.sent)
+	}
+
+	// In a group chat the bot stays silent even in dev mode.
+	b, msgs = newBot()
+	b.DevMode = true
+	b.Handle(context.Background(), message(model.ChatTypeChat, "/id"))
+	if len(msgs.sent) != 0 {
+		t.Fatalf("group chat: %+v", msgs.sent)
+	}
+}

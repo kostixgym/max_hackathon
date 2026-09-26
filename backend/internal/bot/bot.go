@@ -41,6 +41,20 @@ type Bot struct {
 	Houses   Houses
 	Me       Identity
 	Log      *slog.Logger
+
+	// Poll voting deps (stage 1). Callbacks are ignored when they are not wired.
+	Users   Users
+	Votes   Votes
+	Answers Answers
+	// Initiatives and HousesByID rebuild the poll message after a press, so it shows
+	// the voter's current choice (решение 68). Without them only a notification is shown.
+	Initiatives PollingReader
+	HousesByID  HouseReader
+
+	// DevMode enables /id: it tells the user their MAX id, which the API of the
+	// development mode accepts in X-Dev-User-Id. Until the mini-app is ready this is
+	// the only way to act in the API as a real MAX account. The id is not logged.
+	DevMode bool
 }
 
 // openAppPayload is what MAX accepts in the payload of an open_app button;
@@ -53,18 +67,22 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 	case model.UpdateBotStarted:
 		// «Начать» in a new dialog; a deep link max.ru/<bot>?start=<slug> puts the slug into Payload.
 		b.start(ctx, u, u.Payload)
+	case model.UpdateMessageCallback:
+		b.callback(ctx, u)
 	case model.UpdateMessageCreated:
 		msg := u.GetMessage()
 		if msg.Sender.IsBot || msg.Recipient.ChatType != model.ChatTypeDialog {
 			return
 		}
 		cmd := u.GetCommand()
-		if cmd.Command == "/start" {
+		switch {
+		case cmd.Command == "/start":
 			b.start(ctx, u, cmd.RemainingText)
-
-			return
+		case cmd.Command == "/id" && b.DevMode:
+			b.send(ctx, u, fmt.Sprintf("Ваш MAX id: %d\n\nКоманда работает только в режиме разработки (DEV_MODE).", u.UserID), nil)
+		default:
+			b.help(ctx, u)
 		}
-		b.help(ctx, u)
 	}
 }
 
@@ -101,19 +119,29 @@ func (b *Bot) send(ctx context.Context, u model.Update, text string, kb *model.K
 	}
 }
 
-// openAppButton opens the mini-app of this bot. The payload (house invite slug)
-// reaches the mini-app as start_param, so the house is selected without a search.
+// openAppButton is a keyboard with the single button that opens the mini-app.
 func openAppButton(me Identity, text, payload string) *model.Keyboard {
 	kb := model.NewKeyboard()
-	kb.AddRow().AddButton(model.Button{
+	kb.AddRow().AddButton(appButton(me, text, payload))
+
+	return kb
+}
+
+// appButton opens the mini-app of this bot. The payload (house invite slug) reaches
+// the mini-app as start_param, so the house is selected without a search. A payload
+// MAX would reject is dropped: the button then opens the app without a house.
+func appButton(me Identity, text, payload string) model.Button {
+	if !openAppPayload.MatchString(payload) {
+		payload = ""
+	}
+
+	return model.Button{
 		Type:      model.ButtonOpenApp,
 		Text:      text,
 		WebApp:    me.Username,
 		ContactID: me.UserID,
 		Payload:   payload,
-	})
-
-	return kb
+	}
 }
 
 const genericGreeting = `Здравствуйте! Здесь соседи решают вопросы дома вместе: камеры, домофон, ремонт подъезда и другие.
