@@ -189,11 +189,13 @@ func TestPollFlowIntegration(t *testing.T) {
 	}
 
 	// Решение 2: the snapshot is taken when the poll starts. The draft is pointed to
-	// another version of the registry; the start moves it to the current one.
+	// another version of the registry; the start moves it to the current one. The
+	// version is far from the next ones: the registry package adds version 2 to the
+	// same demo house, and test packages run at the same time.
 	var otherUpload string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO registry_uploads (house_id, version, total_area_centi, status)
-		SELECT $1::uuid, max(version) + 1, 100, 'preview' FROM registry_uploads WHERE house_id = $1::uuid
+		SELECT $1::uuid, max(version) + 1000, 100, 'preview' FROM registry_uploads WHERE house_id = $1::uuid
 		RETURNING id::text`, house.ID).Scan(&otherUpload); err != nil {
 		t.Fatal(err)
 	}

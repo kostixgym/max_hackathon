@@ -79,6 +79,14 @@ func (s *Service) AskQuestion(ctx context.Context, initiativeID, userID, text st
 		return Question{}, ErrOwnInitiative
 	}
 
+	// Everything read from the pool is read before the transaction: a request that holds
+	// a transaction must not wait for a second connection, or a few concurrent ones
+	// exhaust the pool and wait for each other forever.
+	runAt, err := s.relayTime(ctx, in.HouseID)
+	if err != nil {
+		return Question{}, err
+	}
+
 	q := Question{InitiativeID: in.ID, AskedByUserID: userID, Text: text}
 	err = s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		var recent int
@@ -97,11 +105,6 @@ func (s *Service) AskQuestion(ctx context.Context, initiativeID, userID, text st
 			VALUES ($1::uuid, $2::uuid, $3)
 			RETURNING id::text, created_at`, in.ID, userID, text).Scan(&q.ID, &q.CreatedAt); err != nil {
 			return fmt.Errorf("insert question: %w", err)
-		}
-
-		runAt, err := s.relayTime(ctx, in.HouseID)
-		if err != nil {
-			return err
 		}
 
 		return s.queue.EnqueueTx(ctx, tx, notify.Job{
@@ -142,6 +145,10 @@ func (s *Service) AnswerQuestion(ctx context.Context, questionID, userID, text s
 	if q.AnsweredAt != nil {
 		return Question{}, ErrQuestionAnswered
 	}
+	runAt, err := s.relayTime(ctx, in.HouseID) // before the transaction, see AskQuestion
+	if err != nil {
+		return Question{}, err
+	}
 
 	err = s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		var answeredAt time.Time
@@ -157,11 +164,6 @@ func (s *Service) AnswerQuestion(ctx context.Context, questionID, userID, text s
 			return fmt.Errorf("answer question: %w", err)
 		}
 		q.Answer, q.AnsweredAt = text, &answeredAt
-
-		runAt, err := s.relayTime(ctx, in.HouseID)
-		if err != nil {
-			return err
-		}
 
 		return s.queue.EnqueueTx(ctx, tx, notify.Job{
 			Type:     notify.TypeQuestionAnswered,

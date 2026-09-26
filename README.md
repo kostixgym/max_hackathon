@@ -206,7 +206,7 @@ TEST_DATABASE_URL='postgres://postgres:test@localhost:55432/postgres?sslmode=dis
 ```
 
 CI (`.github/workflows/ci.yml`) запускается на каждый пуш в любую ветку. Он проверяет `gofmt` и `go vet`, прогоняет все тесты
-с `-race` на PostgreSQL 18 и собирает образы с лимитом 5 минут.
+с `-race` на PostgreSQL 18 (пул на два соединения, чтобы ловить взаимоблокировки) и собирает образы с лимитом 5 минут.
 
 ## Примеры ожидаемого поведения
 
