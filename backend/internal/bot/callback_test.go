@@ -47,9 +47,10 @@ func (f *fakeVotes) CastVote(_ context.Context, in poll.CastInput) (poll.CastRes
 }
 
 type fakeAnswers struct {
-	mu    sync.Mutex
-	calls []string // callback_id
-	texts []string
+	mu       sync.Mutex
+	calls    []string // callback_id
+	texts    []string
+	messages []*model.NewMessageBody // the updated poll message, when the answer carries one
 }
 
 func (f *fakeAnswers) AnswerOnCallback(_ context.Context, callbackID string, answer model.CallbackAnswer) (model.SimpleQueryResult, error) {
@@ -59,6 +60,7 @@ func (f *fakeAnswers) AnswerOnCallback(_ context.Context, callbackID string, ans
 	if answer.Notification != nil {
 		f.texts = append(f.texts, *answer.Notification)
 	}
+	f.messages = append(f.messages, answer.Message)
 
 	return model.SimpleQueryResult{}, nil
 }
@@ -178,4 +180,40 @@ func TestCallbackWithoutUserIsIgnored(t *testing.T) {
 func TestCallbackWithoutDepsIsIgnored(t *testing.T) {
 	b := &Bot{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}                          // no Users/Votes/Answers
 	b.Handle(context.Background(), callbackUpdate("cb-1", "pv:"+testInitiative+":for", 42)) // must not panic
+}
+
+// After a vote the poll message itself shows the current choice and keeps the
+// buttons to change it (решение 68).
+func TestCallbackUpdatesPollMessage(t *testing.T) {
+	b := newVoteBot(&fakeVotes{})
+	answers := &fakeAnswers{}
+	b.Answers, b.Initiatives, b.HousesByID = answers, fakePolling{stage: "poll"}, fakeHouseReader{}
+
+	b.Handle(context.Background(), callbackUpdate("cb-1", "pv:"+testInitiative+":for", 42))
+
+	msg := answers.messages[0]
+	if msg == nil || !strings.Contains(msg.Text, "Ваш голос: «за», 26,15 м² (кв. 45)") {
+		t.Fatalf("updated message = %+v, want the current choice", msg)
+	}
+	if buttons := msg.Attachments[0].Payload.Buttons; len(buttons) != 3 || buttons[0][0].Type != model.ButtonCallback {
+		t.Fatalf("the voting buttons must stay while the poll is on: %+v", buttons)
+	}
+}
+
+// A press on a message of a closed poll removes its voting buttons.
+func TestCallbackClosedPollRemovesButtons(t *testing.T) {
+	b := newVoteBot(&fakeVotes{err: poll.ErrPollClosed})
+	answers := &fakeAnswers{}
+	b.Answers, b.Initiatives, b.HousesByID = answers, fakePolling{stage: "meeting"}, fakeHouseReader{}
+
+	b.Handle(context.Background(), callbackUpdate("cb-1", "pv:"+testInitiative+":for", 42))
+
+	msg := answers.messages[0]
+	if msg == nil || !strings.Contains(msg.Text, "Опрос завершён") {
+		t.Fatalf("updated message = %+v, want «Опрос завершён»", msg)
+	}
+	buttons := msg.Attachments[0].Payload.Buttons
+	if len(buttons) != 1 || buttons[0][0].Type != model.ButtonOpenApp {
+		t.Fatalf("only the app button must stay after the poll: %+v", buttons)
+	}
 }

@@ -46,15 +46,21 @@ type Deps struct {
 	Initiatives  InitiativeCreator
 	PollStarter  PollStarter
 	PollProgress PollProgress
+	Votes        Voter
 	DemoMembers  DemoMembership
 }
+
+// maxBodyBytes limits a request body: the largest one, an initiative with its
+// parameters, is a few kilobytes; without a limit a client could make the server
+// read megabytes into memory.
+const maxBodyBytes = 64 << 10
 
 // NewHandler builds the router of the API.
 func NewHandler(d Deps) http.Handler {
 	h := &handlers{
 		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode,
 		access: d.Access, initiatives: d.Initiatives, pollStarter: d.PollStarter,
-		pollProgress: d.PollProgress, demoMembers: d.DemoMembers,
+		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers,
 	}
 
 	// Application logs are emitted through slog; Gin's debug route dump would
@@ -62,7 +68,7 @@ func NewHandler(d Deps) http.Handler {
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
 	router.HandleMethodNotAllowed = true
-	router.Use(requestLogger(d.Log), recovery(d.Log))
+	router.Use(requestLogger(d.Log), recovery(d.Log), limitBody(maxBodyBytes))
 	router.NoRoute(func(c *gin.Context) {
 		writeError(c, http.StatusNotFound, "not_found", "Маршрут не найден")
 	})
@@ -81,13 +87,30 @@ func NewHandler(d Deps) http.Handler {
 	protected.GET("/premises/:premiseID/owners", h.premiseOwners)
 	protected.GET("/houses/:house/meeting-officer-candidates", h.meetingOfficerCandidates)
 
-	// Stage 1: the support poll.
+	// Stage 1: the support poll. :house is the invite slug for the demo shortcut (it
+	// comes from the house link) and the house id for initiatives (it comes from /me).
 	protected.POST("/houses/:house/demo-membership", h.demoMembership)
-	protected.POST("/initiatives", h.createInitiative)
+	protected.POST("/houses/:house/initiatives", h.createInitiative)
 	protected.POST("/initiatives/:id/start-poll", h.startPoll)
-	protected.GET("/initiatives/:id/progress", h.initiativeProgress)
+	protected.PUT("/initiatives/:id/my-vote", h.myVote)
+	protected.GET("/initiatives/:id/poll", h.pollProgressHandler)
 
 	return router
+}
+
+// limitBody rejects a body larger than n bytes: at once by Content-Length, and while
+// reading for a body without it.
+func limitBody(n int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.ContentLength > n {
+			writeError(c, http.StatusRequestEntityTooLarge, "request_too_large", "Слишком большой запрос")
+			c.Abort()
+
+			return
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, n)
+		c.Next()
+	}
 }
 
 type handlers struct {
@@ -102,6 +125,7 @@ type handlers struct {
 	initiatives  InitiativeCreator
 	pollStarter  PollStarter
 	pollProgress PollProgress
+	votes        Voter
 	demoMembers  DemoMembership
 }
 

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -97,6 +98,7 @@ type CastResult struct {
 	PremiseNumber string
 	WeightNum     int64 // hundredths of м² as an exact fraction Num/Den
 	WeightDen     int64
+	UpdatedAt     time.Time
 }
 
 // CastVote records or changes the vote of one owner. The weight is copied from
@@ -169,9 +171,10 @@ func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) 
 
 	// All premises of the user make one vote: written together or not at all. The
 	// weight is copied once and never changes (решение 54), so a re-vote keeps it.
+	result := CastResult{Choice: in.Choice}
 	err = s.tx.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		for _, sh := range shares {
-			if _, err := tx.Exec(ctx, `
+			if err := tx.QueryRow(ctx, `
 				INSERT INTO poll_votes (initiative_id, owner_id, user_id, choice,
 				                        weight_num, weight_den, official_channel, willing_to_help)
 				VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7, $8)
@@ -179,9 +182,10 @@ func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) 
 				SET choice = EXCLUDED.choice, user_id = EXCLUDED.user_id,
 				    official_channel = CASE WHEN $9 THEN EXCLUDED.official_channel ELSE poll_votes.official_channel END,
 				    willing_to_help = CASE WHEN $9 THEN EXCLUDED.willing_to_help ELSE poll_votes.willing_to_help END,
-				    updated_at = now()`,
+				    updated_at = now()
+				RETURNING updated_at`,
 				in.InitiativeID, sh.link.OwnerID, in.UserID, in.Choice, sh.num, sh.den,
-				channel, willing, replaceSurvey); err != nil {
+				channel, willing, replaceSurvey).Scan(&result.UpdatedAt); err != nil {
 				return fmt.Errorf("cast vote: %w", err)
 			}
 		}
@@ -192,7 +196,6 @@ func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) 
 		return CastResult{}, err
 	}
 
-	result := CastResult{Choice: in.Choice}
 	total := new(big.Rat)
 	numbers := make([]string, 0, len(shares))
 	for _, sh := range shares {

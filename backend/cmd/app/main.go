@@ -14,6 +14,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	// Houses keep local time zones (quiet hours, poll deadlines): the zone database
+	// is built in, so it does not depend on the runtime image.
+	_ "time/tzdata"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
@@ -118,6 +121,7 @@ func run() error {
 		Initiatives:  initService,
 		PollStarter:  initService,
 		PollProgress: polls,
+		Votes:        polls,
 		DemoMembers:  users,
 	})
 
@@ -214,10 +218,12 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 		log.Warn("bot: webhook subscriptions exist, long polling will get no updates", "count", len(subs.Subscriptions))
 	}
 
+	identity := bot.Identity{UserID: me.UserID, Username: me.Username}
 	inviter := &bot.PollInviter{
 		Messages:    api.Messages,
 		Initiatives: deps.initiatives,
 		Houses:      deps.houseByID,
+		Me:          identity,
 	}
 	var wg sync.WaitGroup
 
@@ -234,13 +240,15 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 	poller := &maxbot.Poller{
 		Updates: api.Subscriptions,
 		Handler: &bot.Bot{
-			Messages: api.Messages,
-			Houses:   deps.houses,
-			Me:       bot.Identity{UserID: me.UserID, Username: me.Username},
-			Log:      log,
-			Users:    deps.users,
-			Votes:    deps.votes,
-			Answers:  api.Messages,
+			Messages:    api.Messages,
+			Houses:      deps.houses,
+			Me:          identity,
+			Log:         log,
+			Users:       deps.users,
+			Votes:       deps.votes,
+			Answers:     api.Messages,
+			Initiatives: deps.initiatives,
+			HousesByID:  deps.houseByID,
 		},
 		Log:     log,
 		BotID:   me.UserID,

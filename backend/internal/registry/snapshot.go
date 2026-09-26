@@ -88,12 +88,13 @@ func (s *Store) PremiseByNumber(ctx context.Context, houseID, number string) (Pr
 	var p Premise
 	err := s.pool.QueryRow(ctx, `
 		SELECT p.id::text, p.number, p.kind, p.entrance, p.floor, p.display_area_centi,
-		       h.id::text, h.org_id::text, h.invite_slug, h.address, h.region, h.is_demo
+		       h.id::text, h.org_id::text, h.invite_slug, h.address, h.region, h.is_demo, h.timezone
 		FROM premises p
 		JOIN houses h ON h.id = p.house_id
 		WHERE p.house_id = $1::uuid AND p.number = $2`, houseID, number,
 	).Scan(&p.ID, &p.Number, &p.Kind, &p.Entrance, &p.Floor, &p.DisplayAreaCenti,
-		&p.House.ID, &p.House.OrgID, &p.House.InviteSlug, &p.House.Address, &p.House.Region, &p.House.IsDemo)
+		&p.House.ID, &p.House.OrgID, &p.House.InviteSlug, &p.House.Address, &p.House.Region, &p.House.IsDemo,
+		&p.House.Timezone)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}

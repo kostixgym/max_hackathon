@@ -1,9 +1,11 @@
 name: CI
 
 on:
-  pull_request:
+  # Every pushed branch is checked, with or without a PR: the result shows on the
+  # commit and on its PR. workflow_dispatch reruns it by hand.
   push:
-    branches: [main]
+    branches: ['**']
+  workflow_dispatch:
 
 jobs:
   backend:
@@ -38,7 +40,8 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go test
-        run: go test ./... -count=1
+        # -race: the worker and the bot poller run concurrently with the API.
+        run: go test ./... -race -count=1
 
   docker:
     name: docker compose build (≤ 5 min)

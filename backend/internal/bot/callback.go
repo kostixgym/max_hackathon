@@ -7,9 +7,11 @@ import (
 	"math/big"
 	"strings"
 
+	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
 
 	"maxhackathon/backend/internal/access"
+	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/poll"
 	"maxhackathon/backend/internal/registry"
 )
@@ -85,23 +87,72 @@ func (b *Bot) callback(ctx context.Context, u model.Update) {
 	case errors.Is(err, poll.ErrNotOwner):
 		b.answer(ctx, cb.CallbackID, "Голосуют только подтверждённые собственники. Откройте приложение и подтвердите квартиру")
 	case errors.Is(err, poll.ErrPollClosed):
-		b.answer(ctx, cb.CallbackID, "Опрос завершён")
+		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, nil, "Опрос завершён")
 	case errors.Is(err, poll.ErrNoWeight):
 		b.answer(ctx, cb.CallbackID, "Вашей записи нет в версии реестра этого опроса. Откройте приложение и отправьте «Данные неверны»")
 	case err != nil:
 		b.Log.Error("bot: cast vote", "err", err, "initiative", initiativeID)
 		b.answer(ctx, cb.CallbackID, "Не получилось учесть голос, попробуйте ещё раз")
 	default:
-		b.answer(ctx, cb.CallbackID, voteAcceptedText(result))
+		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, &result, voteAcceptedText(result))
 	}
 }
 
 func (b *Bot) answer(ctx context.Context, callbackID, notification string) {
-	if _, err := b.Answers.AnswerOnCallback(ctx, callbackID, model.CallbackAnswer{
-		Notification: &notification,
-	}); err != nil {
+	b.sendAnswer(ctx, callbackID, model.CallbackAnswer{Notification: &notification})
+}
+
+// answerWithMessage shows the notification and rebuilds the poll message: after a
+// vote it shows the voter's choice, after the end of the poll the voting buttons are
+// gone (решение 68: POST /answers updates the message, no stored message id is needed).
+// If the message cannot be rebuilt, the notification alone is shown.
+func (b *Bot) answerWithMessage(ctx context.Context, callbackID, initiativeID string, vote *poll.CastResult, notification string) {
+	answer := model.CallbackAnswer{Notification: &notification}
+	if body, ok := b.pollMessageBody(ctx, initiativeID, vote); ok {
+		answer.Message = &body
+	}
+	b.sendAnswer(ctx, callbackID, answer)
+}
+
+func (b *Bot) pollMessageBody(ctx context.Context, initiativeID string, vote *poll.CastResult) (model.NewMessageBody, bool) {
+	if b.Initiatives == nil || b.HousesByID == nil {
+		return model.NewMessageBody{}, false
+	}
+	initiative, err := b.Initiatives.Polling(ctx, initiativeID)
+	if err != nil {
+		if !errors.Is(err, initiatives.ErrNotFound) {
+			b.Log.Error("bot: initiative for the poll message", "err", err, "initiative", initiativeID)
+		}
+
+		return model.NewMessageBody{}, false
+	}
+	house, err := b.HousesByID.House(ctx, initiative.HouseID)
+	if err != nil {
+		b.Log.Error("bot: house for the poll message", "err", err, "initiative", initiativeID)
+
+		return model.NewMessageBody{}, false
+	}
+
+	text, kb := pollMessage(b.Me, initiative, house, vote)
+
+	return maxapi.NewMessage().SetText(text).AddKeyboard(kb).MessageBody(), true
+}
+
+func (b *Bot) sendAnswer(ctx context.Context, callbackID string, answer model.CallbackAnswer) {
+	if _, err := b.Answers.AnswerOnCallback(ctx, callbackID, answer); err != nil {
 		b.Log.Error("bot: answer on callback", "err", err, "callback_id", callbackID)
 	}
+}
+
+// voteSummary: «за», 26,15 м² (кв. 45).
+func voteSummary(result poll.CastResult) string {
+	weight := new(big.Rat).SetFrac64(result.WeightNum, result.WeightDen*100) // сотые м² → м²
+	word := "«за»"
+	if result.Choice == poll.ChoiceAgainst {
+		word = "«против»"
+	}
+
+	return fmt.Sprintf("%s, %s м² (кв. %s)", word, registry.FormatM2(weight), result.PremiseNumber)
 }
 
 func voteAcceptedText(result poll.CastResult) string {

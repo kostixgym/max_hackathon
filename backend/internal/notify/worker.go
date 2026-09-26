@@ -14,6 +14,7 @@ type Queue interface {
 	Complete(ctx context.Context, id string) error
 	Retry(ctx context.Context, id string, jobErr error, pause time.Duration) error
 	ResetStale(ctx context.Context) (int64, error)
+	Purge(ctx context.Context) (int64, error)
 }
 
 // JobHandler executes jobs of one type. A returned error sends the job to a retry.
@@ -29,10 +30,10 @@ type Worker struct {
 
 	Batch        int           // jobs per claim, default 10
 	PollInterval time.Duration // pause between empty claims, default 5s
-	// StaleCheck is how often jobs stuck in 'running' after a crash are looked for,
-	// default 1 minute. Checking only on start is not enough: a container restarted
-	// right after a crash would leave its jobs stuck until the next restart.
-	StaleCheck time.Duration
+	// Maintenance is how often jobs stuck in 'running' after a crash are requeued and
+	// old finished jobs are purged, default 1 minute. Doing it only on start is not
+	// enough: a container restarted right after a crash would leave its jobs stuck.
+	Maintenance time.Duration
 }
 
 // Run works until ctx is cancelled. A panic in a handler sends the job to a retry
@@ -44,18 +45,18 @@ func (w *Worker) Run(ctx context.Context) {
 	if w.PollInterval <= 0 {
 		w.PollInterval = 5 * time.Second
 	}
-	if w.StaleCheck <= 0 {
-		w.StaleCheck = time.Minute
+	if w.Maintenance <= 0 {
+		w.Maintenance = time.Minute
 	}
 
 	w.Log.Info("notify: worker started")
 	defer w.Log.Info("notify: worker stopped")
 
-	var lastStaleCheck time.Time
+	var lastMaintenance time.Time
 	for ctx.Err() == nil {
-		if time.Since(lastStaleCheck) >= w.StaleCheck {
-			w.resetStale(ctx)
-			lastStaleCheck = time.Now()
+		if time.Since(lastMaintenance) >= w.Maintenance {
+			w.maintain(ctx)
+			lastMaintenance = time.Now()
 		}
 
 		jobs, err := w.Queue.Claim(ctx, w.Batch)
@@ -81,13 +82,22 @@ func (w *Worker) Run(ctx context.Context) {
 	}
 }
 
-func (w *Worker) resetStale(ctx context.Context) {
+// maintain requeues jobs stuck after a crash and purges old finished jobs.
+func (w *Worker) maintain(ctx context.Context) {
 	if n, err := w.Queue.ResetStale(ctx); err != nil {
 		if ctx.Err() == nil {
 			w.Log.Warn("notify: reset stale jobs", "err", err)
 		}
 	} else if n > 0 {
 		w.Log.Info("notify: requeued jobs stuck after a crash", "count", n)
+	}
+
+	if n, err := w.Queue.Purge(ctx); err != nil {
+		if ctx.Err() == nil {
+			w.Log.Warn("notify: purge old jobs", "err", err)
+		}
+	} else if n > 0 {
+		w.Log.Info("notify: purged old jobs", "count", n)
 	}
 }
 

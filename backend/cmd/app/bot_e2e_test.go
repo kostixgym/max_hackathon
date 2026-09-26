@@ -81,6 +81,7 @@ func (n *e2eNotifier) Retry(context.Context, string, error, time.Duration) error
 	return nil
 }
 func (n *e2eNotifier) ResetStale(context.Context) (int64, error) { return 0, nil }
+func (n *e2eNotifier) Purge(context.Context) (int64, error)      { return 0, nil }
 func (n *e2eNotifier) LoadMarker(context.Context, int64) (int64, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -105,6 +106,7 @@ type fakeMAX struct {
 	sentTo     []string // user_id of every POST /messages
 	sentBodies []map[string]any
 	answers    []string // notification text of every POST /answers
+	edits      []string // text of the message updated by every POST /answers
 	sent       chan struct{}
 	answered   chan struct{}
 }
@@ -165,9 +167,15 @@ func (f *fakeMAX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodPost && r.URL.Path == "/answers":
 		var body struct {
 			Notification string `json:"notification"`
+			Message      *struct {
+				Text string `json:"text"`
+			} `json:"message"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.answers = append(f.answers, body.Notification)
+		if body.Message != nil {
+			f.edits = append(f.edits, body.Message.Text)
+		}
 		_, _ = io.WriteString(w, `{"success":true}`)
 		select {
 		case f.answered <- struct{}{}:
@@ -255,6 +263,10 @@ func TestBotEndToEndWithFakeMAX(t *testing.T) {
 	}
 	if !strings.Contains(fake.answers[0], "Голос учтён") || !strings.Contains(fake.answers[0], "26,15") {
 		t.Fatalf("answer = %q, want the weighted receipt", fake.answers[0])
+	}
+	// The poll message itself is updated with the current choice (решение 68).
+	if len(fake.edits) != 1 || !strings.Contains(fake.edits[0], "Ваш голос: «за», 26,15 м²") {
+		t.Fatalf("message updates = %q, want the poll message with the current choice", fake.edits)
 	}
 
 	// The marker advanced: the callback batch was consumed and persisted.

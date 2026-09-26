@@ -2,8 +2,10 @@ package initiatives
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -31,8 +33,9 @@ type Templates interface {
 	TemplateByCode(ctx context.Context, code string) (rules.CatalogTemplate, error)
 }
 
-// Snapshots reads registry snapshots.
-type Snapshots interface {
+// Registry reads houses and registry snapshots (the registry module).
+type Registry interface {
+	House(ctx context.Context, id string) (registry.HouseRef, error)
 	CurrentSnapshot(ctx context.Context, houseID string) (registry.Snapshot, error)
 }
 
@@ -52,7 +55,7 @@ type Service struct {
 	pool       *pgxpool.Pool
 	tm         *db.TransactionManager
 	templates  Templates
-	snapshots  Snapshots
+	registry   Registry
 	recipients Recipients
 	queue      Queue
 }
@@ -62,11 +65,11 @@ func NewService(
 	pool *pgxpool.Pool,
 	tm *db.TransactionManager,
 	templates Templates,
-	snapshots Snapshots,
+	reg Registry,
 	recipients Recipients,
 	queue Queue,
 ) *Service {
-	return &Service{pool: pool, tm: tm, templates: templates, snapshots: snapshots, recipients: recipients, queue: queue}
+	return &Service{pool: pool, tm: tm, templates: templates, registry: reg, recipients: recipients, queue: queue}
 }
 
 // Domain errors.
@@ -77,7 +80,16 @@ var (
 	ErrWrongStage = errors.New("initiative stage does not allow this action")
 	// ErrNotInitiator means only the initiator may do this.
 	ErrNotInitiator = errors.New("only the initiator may do this")
+	// ErrEmptyTitle means the title is empty or only spaces.
+	ErrEmptyTitle = errors.New("initiative title is empty")
+	// ErrTooManyInitiatives means the user has reached the daily limit of new initiatives.
+	ErrTooManyInitiatives = errors.New("too many initiatives created in the last 24 hours")
 )
+
+// MaxInitiativesPerDay limits how many initiatives one user creates in 24 hours.
+// Every initiative can start a poll that messages the owners of the house, so the
+// limit keeps one account from flooding the neighbours with bot messages.
+const MaxInitiativesPerDay = 10
 
 // CreateInput starts a new initiative from a template.
 type CreateInput struct {
@@ -86,11 +98,29 @@ type CreateInput struct {
 	TemplateCode    string
 	Title           string
 	Description     string
+	// Params are the values of the template form (docs/04, решение 14). They are
+	// stored as given: the MVP templates have an empty schema, which accepts any object.
+	Params map[string]any
 }
 
-// CreateFromTemplate creates a draft initiative with the agenda of the template
-// and pins the current registry snapshot (docs/04, принцип 3).
+// CreateFromTemplate creates a draft initiative with the agenda of the template. The
+// draft points to the current registry version; the poll start pins the snapshot
+// (docs/04, принцип 3 и решение 2).
 func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initiative, error) {
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		return Initiative{}, ErrEmptyTitle
+	}
+	description := strings.TrimSpace(in.Description)
+	params := in.Params
+	if params == nil {
+		params = map[string]any{}
+	}
+	paramsJSON, err := json.Marshal(params)
+	if err != nil {
+		return Initiative{}, fmt.Errorf("initiative params: %w", err)
+	}
+
 	tpl, err := s.templates.TemplateByCode(ctx, in.TemplateCode)
 	if err != nil {
 		return Initiative{}, err
@@ -99,24 +129,35 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 		return Initiative{}, fmt.Errorf("template %s has no items", in.TemplateCode)
 	}
 
-	snap, err := s.snapshots.CurrentSnapshot(ctx, in.HouseID)
+	snap, err := s.registry.CurrentSnapshot(ctx, in.HouseID)
 	if err != nil {
 		return Initiative{}, err
 	}
 
 	var created Initiative
 	err = s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
-		var description any
-		if in.Description != "" {
-			description = in.Description
+		var recent int
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM initiatives
+			WHERE initiator_user_id = $1::uuid AND created_at > now() - interval '24 hours'`,
+			in.InitiatorUserID).Scan(&recent); err != nil {
+			return fmt.Errorf("count recent initiatives: %w", err)
+		}
+		if recent >= MaxInitiativesPerDay {
+			return ErrTooManyInitiatives
+		}
+
+		var descriptionValue any
+		if description != "" {
+			descriptionValue = description
 		}
 
 		// An owner who creates the initiative is both its author and initiator (docs/04, решение 11).
 		err := tx.QueryRow(ctx, `
-			INSERT INTO initiatives (house_id, template_id, title, description, stage,
+			INSERT INTO initiatives (house_id, template_id, title, description, params, stage,
 			                         registry_upload_id, initiator_user_id, author_user_id)
-			VALUES ($1::uuid, $2::uuid, $3, $4, 'draft', $5::uuid, $6::uuid, $6::uuid)
-			RETURNING id::text`, in.HouseID, tpl.ID, in.Title, description, snap.UploadID, in.InitiatorUserID,
+			VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'draft', $6::uuid, $7::uuid, $7::uuid)
+			RETURNING id::text`, in.HouseID, tpl.ID, title, descriptionValue, paramsJSON, snap.UploadID, in.InitiatorUserID,
 		).Scan(&created.ID)
 		if err != nil {
 			return fmt.Errorf("create initiative: %w", err)
@@ -138,12 +179,18 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 	}
 
 	created.HouseID = in.HouseID
-	created.Title = in.Title
-	created.Description = in.Description
+	created.Title = title
+	created.Description = description
 	created.Stage = "draft"
 	created.RegistryUploadID = snap.UploadID
+	created.RegistryVersion = snap.Version
 	created.InitiatorUserID = &in.InitiatorUserID
 	created.TemplateID = &tpl.ID
+	for _, item := range tpl.Items {
+		created.AgendaItems = append(created.AgendaItems, AgendaItem{
+			Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
+		})
+	}
 
 	return created, nil
 }
@@ -166,16 +213,33 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 		pollEndsAt = time.Now().Add(7 * 24 * time.Hour) // решение 18: 7 дней по умолчанию
 	}
 
+	house, err := s.registry.House(ctx, current.HouseID)
+	if err != nil {
+		return Initiative{}, err
+	}
+	// The snapshot is taken when the poll starts (решение 2): a draft may wait while
+	// the registry is reloaded, and the votes must weigh by the version the owners see.
+	snap, err := s.registry.CurrentSnapshot(ctx, current.HouseID)
+	if err != nil {
+		return Initiative{}, err
+	}
 	recipients, err := s.recipients.VerifiedOwnerRecipients(ctx, current.HouseID)
 	if err != nil {
 		return Initiative{}, err
+	}
+	recipients = invitees(recipients, house, byUserID)
+
+	// Started in the evening, the poll reaches the owners in the morning (решение 29).
+	var runAt time.Time
+	if until, quiet := notify.QuietHoursEnd(time.Now(), house.Location()); quiet {
+		runAt = until
 	}
 
 	err = s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx, `
 			UPDATE initiatives
-			SET stage = 'poll', poll_ends_at = $2, updated_at = now()
-			WHERE id = $1::uuid AND stage = 'draft'`, initiativeID, pollEndsAt)
+			SET stage = 'poll', poll_ends_at = $2, registry_upload_id = $3::uuid, updated_at = now()
+			WHERE id = $1::uuid AND stage = 'draft'`, initiativeID, pollEndsAt, snap.UploadID)
 		if err != nil {
 			return fmt.Errorf("start poll: %w", err)
 		}
@@ -192,6 +256,7 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 					"initiative_id": initiativeID,
 					"max_user_id":   r.MaxUserID,
 				},
+				RunAt: runAt,
 			})
 		}
 
@@ -203,8 +268,28 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 
 	current.Stage = "poll"
 	current.PollEndsAt = &pollEndsAt
+	current.RegistryUploadID = snap.UploadID
+	current.RegistryVersion = snap.Version
 
 	return current, nil
+}
+
+// invitees narrows the poll audience. In the demo house every tester confirms
+// themselves as an owner, so inviting all owners would deliver one tester's text to
+// every member of the jury: there the poll goes to its initiator only (решение 72).
+func invitees(all []Recipient, house registry.HouseRef, initiatorID string) []Recipient {
+	if !house.IsDemo {
+		return all
+	}
+
+	own := make([]Recipient, 0, 1)
+	for _, r := range all {
+		if r.UserID == initiatorID {
+			own = append(own, r)
+		}
+	}
+
+	return own
 }
 
 // Polling is the part of the initiative the poll module needs.
@@ -251,6 +336,18 @@ type Initiative struct {
 	PollEndsAt       *time.Time
 	RegistryUploadID string
 	InitiatorUserID  *string
+
+	// Filled by CreateFromTemplate and StartPoll only: the version of the registry
+	// snapshot and (on creation) the agenda copied from the template.
+	RegistryVersion int
+	AgendaItems     []AgendaItem
+}
+
+// AgendaItem is one question of the agenda with the majority it needs.
+type AgendaItem struct {
+	Position     int
+	Text         string
+	MajorityRule string
 }
 
 // Get returns the initiative by id. Hidden initiatives are ErrNotFound.

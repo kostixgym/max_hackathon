@@ -90,16 +90,22 @@ type ClaimedJob struct {
 
 // Claim takes up to limit queued jobs whose time has come. FOR UPDATE SKIP LOCKED
 // lets several workers work on one queue without taking the same job twice.
+//
+// The picked rows are a MATERIALIZED CTE: in «UPDATE … WHERE id IN (SELECT … LIMIT n
+// FOR UPDATE SKIP LOCKED)» PostgreSQL may run the subquery more than once, each run
+// skipping the rows the previous one locked, and claim more than limit jobs.
 func (s *Store) Claim(ctx context.Context, limit int) ([]ClaimedJob, error) {
 	rows, err := s.pool.Query(ctx, `
-		UPDATE jobs SET status = 'running', attempts = attempts + 1, updated_at = now()
-		WHERE id IN (
+		WITH picked AS MATERIALIZED (
 			SELECT id FROM jobs
 			WHERE status = 'queued' AND run_at <= now()
 			ORDER BY run_at
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED)
-		RETURNING id::text, type, payload, attempts, max_attempts`, limit)
+		UPDATE jobs j SET status = 'running', attempts = j.attempts + 1, updated_at = now()
+		FROM picked
+		WHERE j.id = picked.id
+		RETURNING j.id::text, j.type, j.payload, j.attempts, j.max_attempts`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("claim jobs: %w", err)
 	}
@@ -159,6 +165,21 @@ func (s *Store) ResetStale(ctx context.Context) (int64, error) {
 		WHERE status = 'running' AND updated_at < now() - interval '10 minutes'`)
 	if err != nil {
 		return 0, fmt.Errorf("reset stale jobs: %w", err)
+	}
+
+	return tag.RowsAffected(), nil
+}
+
+// Purge deletes jobs finished more than 30 days ago. Their payload holds the MAX id
+// of the addressee, and personal data is kept no longer than needed (docs/04,
+// «Безопасность и персональные данные»). By then any poll is long over, so the
+// dedup keys of the deleted jobs are no longer needed either.
+func (s *Store) Purge(ctx context.Context) (int64, error) {
+	tag, err := s.pool.Exec(ctx, `
+		DELETE FROM jobs
+		WHERE status IN ('done', 'failed') AND updated_at < now() - interval '30 days'`)
+	if err != nil {
+		return 0, fmt.Errorf("purge jobs: %w", err)
 	}
 
 	return tag.RowsAffected(), nil

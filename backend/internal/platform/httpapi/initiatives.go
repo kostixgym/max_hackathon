@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -17,9 +18,10 @@ import (
 	"maxhackathon/backend/internal/rules"
 )
 
-// Initiative endpoints of stage 1: create from a template, start the poll, watch
-// the progress in м². Everything is available to a verified owner of the house;
-// the progress is visible to any verified member (решение 19).
+// Initiative endpoints of stage 1 (docs/API_DESCRIPTION.md, «Минимальный API сквозного
+// MVP»): create from a template, start the poll, vote from the mini-app, watch the
+// progress in м². A verified owner of the house creates and votes; the progress is
+// visible to verified members and the management company (решения 19, 43).
 
 // InitiativeCreator creates initiatives (the initiatives module).
 type InitiativeCreator interface {
@@ -37,10 +39,21 @@ type PollProgress interface {
 	Progress(ctx context.Context, initiativeID string) (poll.Progress, error)
 }
 
+// Voter casts poll votes (the poll module).
+type Voter interface {
+	CastVote(ctx context.Context, in poll.CastInput) (poll.CastResult, error)
+}
+
 // DemoMembership confirms an owner in a demo house (the access module).
 type DemoMembership interface {
 	ConfirmDemoOwner(ctx context.Context, userID, houseID, premiseNumber string, ownerIndex int) (access.OwnerLink, error)
 }
+
+// Poll duration chosen by the initiator: at least an hour, at most 30 days (решение 18).
+const (
+	minPollDuration = time.Hour
+	maxPollDuration = 30 * 24 * time.Hour
+)
 
 func (h *handlers) createInitiative(c *gin.Context) {
 	id, ok := IdentityFrom(c)
@@ -49,12 +62,13 @@ func (h *handlers) createInitiative(c *gin.Context) {
 
 		return
 	}
+	houseID := c.Param("house")
 
 	var body struct {
-		HouseID      string `json:"house_id" binding:"required"`
-		TemplateCode string `json:"template_code" binding:"required"`
-		Title        string `json:"title" binding:"required,max=200"`
-		Description  string `json:"description" binding:"max=2000"`
+		TemplateCode string         `json:"template_code" binding:"required"`
+		Title        string         `json:"title" binding:"required,max=200"`
+		Description  string         `json:"description" binding:"max=2000"`
+		Params       map[string]any `json:"params"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "Проверьте поля запроса")
@@ -63,7 +77,7 @@ func (h *handlers) createInitiative(c *gin.Context) {
 	}
 
 	// Создать инициативу может подтверждённый собственник дома (решение 8).
-	owner, err := h.access.IsVerifiedOwnerIn(c.Request.Context(), id.UserID, body.HouseID)
+	owner, err := h.access.IsVerifiedOwnerIn(c.Request.Context(), id.UserID, houseID)
 	if err != nil {
 		h.log.Error("check owner for initiative", "err", err)
 		writeError(c, http.StatusInternalServerError, "internal", "Не удалось создать инициативу, попробуйте ещё раз")
@@ -77,13 +91,19 @@ func (h *handlers) createInitiative(c *gin.Context) {
 	}
 
 	created, err := h.initiatives.CreateFromTemplate(c.Request.Context(), initiatives.CreateInput{
-		HouseID:         body.HouseID,
+		HouseID:         houseID,
 		InitiatorUserID: id.UserID,
 		TemplateCode:    body.TemplateCode,
 		Title:           body.Title,
 		Description:     body.Description,
+		Params:          body.Params,
 	})
 	switch {
+	case errors.Is(err, initiatives.ErrEmptyTitle):
+		writeError(c, http.StatusBadRequest, "invalid_request", "Укажите название инициативы")
+	case errors.Is(err, initiatives.ErrTooManyInitiatives):
+		writeError(c, http.StatusTooManyRequests, "too_many_initiatives",
+			fmt.Sprintf("За сутки можно создать не больше %d инициатив", initiatives.MaxInitiativesPerDay))
 	case errors.Is(err, rules.ErrTemplateNotFound):
 		writeError(c, http.StatusNotFound, "template_not_found", "Шаблон не найден")
 	case errors.Is(err, registry.ErrNotApplied):
@@ -106,24 +126,27 @@ func (h *handlers) startPoll(c *gin.Context) {
 		return
 	}
 
-	initiativeID := c.Param("id")
+	// The body may be empty (the default 7 days), but a present one must be valid.
 	var body struct {
-		Days int `json:"days" binding:"omitempty,min=1,max=30"`
+		EndsAt *time.Time `json:"ends_at"`
 	}
-	// The body may be empty (the default 7 days), but a present one must be valid:
-	// otherwise «days: 365» would pass the 30-day limit.
 	if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-		writeError(c, http.StatusBadRequest, "invalid_request", "Срок опроса — от 1 до 30 дней")
+		writeError(c, http.StatusBadRequest, "invalid_request", "Укажите окончание опроса в формате RFC 3339")
 
 		return
 	}
+	var endsAt time.Time
+	if body.EndsAt != nil {
+		now := time.Now()
+		if body.EndsAt.Before(now.Add(minPollDuration)) || body.EndsAt.After(now.Add(maxPollDuration)) {
+			writeError(c, http.StatusBadRequest, "invalid_poll_duration", "Опрос может длиться от часа до 30 дней")
 
-	endsAt := time.Time{}
-	if body.Days > 0 {
-		endsAt = time.Now().Add(time.Duration(body.Days) * 24 * time.Hour)
+			return
+		}
+		endsAt = *body.EndsAt
 	}
 
-	started, err := h.pollStarter.StartPoll(c.Request.Context(), initiativeID, id.UserID, endsAt)
+	started, err := h.pollStarter.StartPoll(c.Request.Context(), c.Param("id"), id.UserID, endsAt)
 	switch {
 	case errors.Is(err, initiatives.ErrNotFound):
 		writeError(c, http.StatusNotFound, "initiative_not_found", "Инициатива не найдена")
@@ -139,7 +162,71 @@ func (h *handlers) startPoll(c *gin.Context) {
 	}
 }
 
-func (h *handlers) initiativeProgress(c *gin.Context) {
+// myVote is the vote from the mini-app; in the chat the same vote is cast by buttons.
+func (h *handlers) myVote(c *gin.Context) {
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+
+	var body struct {
+		Choice          string  `json:"choice" binding:"required,oneof=for against"`
+		OfficialChannel *string `json:"official_channel" binding:"omitempty,oneof=gosuslugi paper"`
+		WillingToHelp   *bool   `json:"willing_to_help"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "Проверьте поля голоса")
+
+		return
+	}
+
+	initiativeID := c.Param("id")
+	if _, err := h.pollStarter.Get(c.Request.Context(), initiativeID); err != nil {
+		h.writeInitiativeError(c, err, "get initiative for vote")
+
+		return
+	}
+
+	// The survey is asked of «за» voters only (инвариант 7). Without the survey
+	// fields the stored answers are kept.
+	var survey *poll.Survey
+	if body.Choice == poll.ChoiceFor && (body.OfficialChannel != nil || body.WillingToHelp != nil) {
+		survey = &poll.Survey{}
+		if body.OfficialChannel != nil {
+			survey.OfficialChannel = *body.OfficialChannel
+		}
+		if body.WillingToHelp != nil {
+			survey.WillingToHelp = *body.WillingToHelp
+		}
+	}
+
+	result, err := h.votes.CastVote(c.Request.Context(), poll.CastInput{
+		InitiativeID: initiativeID, UserID: id.UserID, Choice: body.Choice, Survey: survey,
+	})
+	switch {
+	case errors.Is(err, poll.ErrNotOwner):
+		writeError(c, http.StatusForbidden, "not_owner", "Голосуют только подтверждённые собственники дома")
+	case errors.Is(err, poll.ErrPollClosed):
+		writeError(c, http.StatusConflict, "poll_closed", "Опрос завершён")
+	case errors.Is(err, poll.ErrNoWeight):
+		writeError(c, http.StatusConflict, "not_in_snapshot",
+			"Вашей записи нет в версии реестра этого опроса. Отправьте обращение «Данные неверны»")
+	case err != nil:
+		h.log.Error("cast vote", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось учесть голос, попробуйте ещё раз")
+	default:
+		writeJSON(c, http.StatusOK, myVoteJSON{
+			Choice:    result.Choice,
+			WeightM2:  m2(new(big.Rat).SetFrac64(result.WeightNum, result.WeightDen*100)),
+			Premises:  result.PremiseNumber,
+			UpdatedAt: result.UpdatedAt,
+		})
+	}
+}
+
+func (h *handlers) pollProgressHandler(c *gin.Context) {
 	id, ok := IdentityFrom(c)
 	if !ok {
 		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
@@ -149,14 +236,8 @@ func (h *handlers) initiativeProgress(c *gin.Context) {
 
 	initiativeID := c.Param("id")
 	initiative, err := h.pollStarter.Get(c.Request.Context(), initiativeID)
-	if errors.Is(err, initiatives.ErrNotFound) {
-		writeError(c, http.StatusNotFound, "initiative_not_found", "Инициатива не найдена")
-
-		return
-	}
 	if err != nil {
-		h.log.Error("get initiative for progress", "err", err)
-		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить опрос, попробуйте ещё раз")
+		h.writeInitiativeError(c, err, "get initiative for progress")
 
 		return
 	}
@@ -186,6 +267,18 @@ func (h *handlers) initiativeProgress(c *gin.Context) {
 	writeJSON(c, http.StatusOK, toProgressJSON(initiative, progress))
 }
 
+func (h *handlers) writeInitiativeError(c *gin.Context, err error, what string) {
+	if errors.Is(err, initiatives.ErrNotFound) {
+		writeError(c, http.StatusNotFound, "initiative_not_found", "Инициатива не найдена")
+
+		return
+	}
+	h.log.Error(what, "err", err)
+	writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативу, попробуйте ещё раз")
+}
+
+// demoMembership is a shortcut of the demo house: the jury confirms itself as an owner
+// of a flat in one step instead of the full onboarding (docs/04, решение 51).
 func (h *handlers) demoMembership(c *gin.Context) {
 	id, ok := IdentityFrom(c)
 	if !ok {
@@ -242,65 +335,90 @@ func (h *handlers) demoMembership(c *gin.Context) {
 }
 
 type initiativeJSON struct {
-	ID          string     `json:"id"`
-	HouseID     string     `json:"house_id"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Stage       string     `json:"stage"`
-	PollEndsAt  *time.Time `json:"poll_ends_at"`
-	IsInitiator bool       `json:"is_initiator"`
+	ID              string           `json:"id"`
+	HouseID         string           `json:"house_id"`
+	Title           string           `json:"title"`
+	Description     string           `json:"description"`
+	Stage           string           `json:"stage"`
+	PollEndsAt      *time.Time       `json:"poll_ends_at"`
+	IsInitiator     bool             `json:"is_initiator"`
+	RegistryVersion int              `json:"registry_version,omitempty"`
+	AgendaItems     []agendaItemJSON `json:"agenda_items,omitempty"`
+}
+
+type agendaItemJSON struct {
+	Position     int    `json:"position"`
+	Text         string `json:"text"`
+	MajorityRule string `json:"majority_rule"`
 }
 
 // toInitiativeJSON: is_initiator says whether the caller leads the initiative.
 func toInitiativeJSON(in initiatives.Initiative, callerID string) initiativeJSON {
-	return initiativeJSON{
+	j := initiativeJSON{
 		ID: in.ID, HouseID: in.HouseID, Title: in.Title, Description: in.Description,
 		Stage: in.Stage, PollEndsAt: in.PollEndsAt,
-		IsInitiator: in.InitiatorUserID != nil && *in.InitiatorUserID == callerID,
+		IsInitiator:     in.InitiatorUserID != nil && *in.InitiatorUserID == callerID,
+		RegistryVersion: in.RegistryVersion,
 	}
+	for _, item := range in.AgendaItems {
+		j.AgendaItems = append(j.AgendaItems, agendaItemJSON{
+			Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
+		})
+	}
+
+	return j
 }
 
-type progressJSON struct {
-	InitiativeID  string         `json:"initiative_id"`
-	Title         string         `json:"title"`
-	Stage         string         `json:"stage"`
-	TotalAreaM2   string         `json:"total_area_m2"`
-	ForAreaM2     string         `json:"for_area_m2"`
-	AgainstAreaM2 string         `json:"against_area_m2"`
-	ForPercent    string         `json:"for_percent"`
-	VotesFor      int            `json:"votes_for"`
-	VotesAgainst  int            `json:"votes_against"`
-	Demand        demandJSON     `json:"demand"`
-	Thresholds    thresholdsJSON `json:"thresholds"`
+type myVoteJSON struct {
+	Choice    string    `json:"choice"`
+	WeightM2  string    `json:"weight_m2"`
+	Premises  string    `json:"premises"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
-type demandJSON struct {
-	AreaM2  string `json:"area_m2"`
-	Reached bool   `json:"reached"`
+// pollJSON: the fields of the contract first, then the extra ones for the dashboard.
+type pollJSON struct {
+	ForM2         string     `json:"for_m2"`
+	AgainstM2     string     `json:"against_m2"`
+	TotalM2       string     `json:"total_m2"`
+	DemandM2      string     `json:"demand_m2"`
+	DemandReached bool       `json:"demand_reached"`
+	PollEndsAt    *time.Time `json:"poll_ends_at"`
+
+	InitiativeID string         `json:"initiative_id"`
+	Title        string         `json:"title"`
+	Stage        string         `json:"stage"`
+	ForPercent   string         `json:"for_percent"`
+	VotesFor     int            `json:"votes_for"`
+	VotesAgainst int            `json:"votes_against"`
+	Thresholds   thresholdsJSON `json:"thresholds"`
 }
 
 var rat100 = big.NewRat(100, 1)
 
-func toProgressJSON(in initiatives.Initiative, p poll.Progress) progressJSON {
+func toProgressJSON(in initiatives.Initiative, p poll.Progress) pollJSON {
 	thresholds := p.Thresholds()
-	percentFor := "0"
+	percentFor := "0.0"
 	if total := p.TotalM2(); total.Sign() > 0 {
-		percent := p.ForM2().Quo(p.ForM2(), total)
+		percent := new(big.Rat).Quo(p.ForM2(), total)
 		percent.Mul(percent, rat100)
 		percentFor = percent.FloatString(1)
 	}
 
-	return progressJSON{
-		InitiativeID:  p.InitiativeID,
-		Title:         in.Title,
-		Stage:         p.Stage,
-		TotalAreaM2:   m2(p.TotalM2()),
-		ForAreaM2:     m2(p.ForM2()),
-		AgainstAreaM2: m2(p.AgainstM2()),
-		ForPercent:    percentFor,
-		VotesFor:      p.VotesFor,
-		VotesAgainst:  p.VotesAgainst,
-		Demand:        demandJSON{AreaM2: m2(thresholds.Demand), Reached: p.DemandReached()},
+	return pollJSON{
+		ForM2:         m2(p.ForM2()),
+		AgainstM2:     m2(p.AgainstM2()),
+		TotalM2:       m2(p.TotalM2()),
+		DemandM2:      m2(thresholds.Demand),
+		DemandReached: p.DemandReached(),
+		PollEndsAt:    in.PollEndsAt,
+
+		InitiativeID: p.InitiativeID,
+		Title:        in.Title,
+		Stage:        p.Stage,
+		ForPercent:   percentFor,
+		VotesFor:     p.VotesFor,
+		VotesAgainst: p.VotesAgainst,
 		Thresholds: thresholdsJSON{
 			DemandM2:      m2(thresholds.Demand),
 			QuorumAboveM2: m2(thresholds.QuorumAbove),

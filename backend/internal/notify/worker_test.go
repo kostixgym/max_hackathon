@@ -18,6 +18,7 @@ type fakeQueue struct {
 	completed  []string
 	retried    map[string]time.Duration
 	staleCalls int
+	purgeCalls int
 }
 
 func (q *fakeQueue) Claim(context.Context, int) ([]ClaimedJob, error) {
@@ -56,10 +57,18 @@ func (q *fakeQueue) ResetStale(context.Context) (int64, error) {
 	return 0, nil
 }
 
+func (q *fakeQueue) Purge(context.Context) (int64, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.purgeCalls++
+
+	return 0, nil
+}
+
 func newWorker(q *fakeQueue, handlers map[string]JobHandler) *Worker {
 	return &Worker{
 		Queue: q, Handlers: handlers, Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		PollInterval: 5 * time.Millisecond, StaleCheck: 5 * time.Millisecond,
+		PollInterval: 5 * time.Millisecond, Maintenance: 5 * time.Millisecond,
 	}
 }
 
@@ -116,8 +125,8 @@ func TestWorkerRequeuesJobOnStop(t *testing.T) {
 	}
 }
 
-// Stuck jobs are looked for while the worker runs, not only on its start.
-func TestWorkerChecksStaleJobsPeriodically(t *testing.T) {
+// Stuck jobs are requeued and old jobs purged while the worker runs, not only on its start.
+func TestWorkerMaintainsQueuePeriodically(t *testing.T) {
 	q := &fakeQueue{retried: map[string]time.Duration{}}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
 	defer cancel()
@@ -125,7 +134,7 @@ func TestWorkerChecksStaleJobsPeriodically(t *testing.T) {
 
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if q.staleCalls < 2 {
-		t.Fatalf("stale checks = %d, want several during the run", q.staleCalls)
+	if q.staleCalls < 2 || q.purgeCalls < 2 {
+		t.Fatalf("stale checks = %d, purges = %d, want several of each during the run", q.staleCalls, q.purgeCalls)
 	}
 }

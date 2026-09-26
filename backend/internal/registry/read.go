@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -21,6 +22,23 @@ type HouseRef struct {
 	Address    string
 	Region     string
 	IsDemo     bool
+	// Timezone is the IANA zone of the house: quiet hours and deadlines are local.
+	Timezone string
+}
+
+// moscow is used when the zone of a house is unknown: the schema default, fixed so
+// that it works without the time zone database.
+var moscow = time.FixedZone("MSK", 3*60*60)
+
+// Location returns the time zone of the house (Europe/Moscow when it is unknown).
+func (h HouseRef) Location() *time.Location {
+	if h.Timezone != "" {
+		if loc, err := time.LoadLocation(h.Timezone); err == nil {
+			return loc
+		}
+	}
+
+	return moscow
 }
 
 // Premise is a premise (stable between registry versions) with its house.
@@ -53,10 +71,10 @@ type Owner struct {
 func (s *Store) House(ctx context.Context, id string) (HouseRef, error) {
 	var h HouseRef
 	err := s.pool.QueryRow(ctx, `
-		SELECT id::text, org_id::text, invite_slug, address, region, is_demo
+		SELECT id::text, org_id::text, invite_slug, address, region, is_demo, timezone
 		FROM houses
 		WHERE id = $1::uuid`, id,
-	).Scan(&h.ID, &h.OrgID, &h.InviteSlug, &h.Address, &h.Region, &h.IsDemo)
+	).Scan(&h.ID, &h.OrgID, &h.InviteSlug, &h.Address, &h.Region, &h.IsDemo, &h.Timezone)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return h, ErrNotFound
 	}
@@ -72,7 +90,7 @@ func (s *Store) House(ctx context.Context, id string) (HouseRef, error) {
 func (s *Store) Premises(ctx context.Context, ids []string) ([]Premise, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT p.id::text, p.number, p.kind, p.entrance, p.floor, p.display_area_centi,
-		       h.id::text, h.org_id::text, h.invite_slug, h.address, h.region, h.is_demo
+		       h.id::text, h.org_id::text, h.invite_slug, h.address, h.region, h.is_demo, h.timezone
 		FROM premises p
 		JOIN houses h ON h.id = p.house_id
 		WHERE p.id = ANY($1::uuid[])
@@ -87,6 +105,7 @@ func (s *Store) Premises(ctx context.Context, ids []string) ([]Premise, error) {
 		var p Premise
 		if err := rows.Scan(&p.ID, &p.Number, &p.Kind, &p.Entrance, &p.Floor, &p.DisplayAreaCenti,
 			&p.House.ID, &p.House.OrgID, &p.House.InviteSlug, &p.House.Address, &p.House.Region, &p.House.IsDemo,
+			&p.House.Timezone,
 		); err != nil {
 			return nil, fmt.Errorf("scan premise: %w", err)
 		}

@@ -89,11 +89,10 @@ func TestPollFlowIntegration(t *testing.T) {
 		}
 		exec(`DELETE FROM jobs WHERE type = $1`, probeType)
 		if initiativeID != "" {
-			// Poll votes and agenda items go with the initiative.
 			exec(`DELETE FROM jobs WHERE dedup_key LIKE $1`, notify.TypePollInvite+":"+initiativeID+":%")
-			exec(`DELETE FROM initiatives WHERE id = $1::uuid`, initiativeID)
 		}
-		// Links go with the users.
+		// Poll votes and agenda items go with the initiatives, links with the users.
+		exec(`DELETE FROM initiatives WHERE initiator_user_id = ANY($1::uuid[])`, userIDs)
 		exec(`DELETE FROM users WHERE id = ANY($1::uuid[])`, userIDs)
 		exec(`DELETE FROM bot_markers WHERE bot_user_id = $1`, botID)
 	})
@@ -135,15 +134,46 @@ func TestPollFlowIntegration(t *testing.T) {
 	}
 
 	initiative, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
-		HouseID: house.ID, InitiatorUserID: alice.ID,
-		TemplateCode: "cctv", Title: "Камеры в подъезде", Description: "3 камеры, хранение 30 дней",
+		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
+		Title: "  Камеры в подъезде  ", Description: "3 камеры, хранение 30 дней",
+		Params: map[string]any{"camera_count": 3},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	initiativeID = initiative.ID
-	if initiative.Stage != "draft" || initiative.RegistryUploadID == "" || initiative.Description == "" {
+	if initiative.Stage != "draft" || initiative.RegistryUploadID == "" || initiative.Description == "" ||
+		initiative.Title != "Камеры в подъезде" || initiative.RegistryVersion != 1 {
 		t.Fatalf("initiative = %+v", initiative)
+	}
+	// The agenda starts with the procedural question: the protocol names the chair and the secretary.
+	if items := initiative.AgendaItems; len(items) != 2 ||
+		items[0].MajorityRule != string(rules.MajorityOfParticipants) || items[1].MajorityRule != string(rules.TwoThirdsOfAll) {
+		t.Fatalf("agenda = %+v", initiative.AgendaItems)
+	}
+	var cameras string
+	if err := pool.QueryRow(ctx, `SELECT params->>'camera_count' FROM initiatives WHERE id = $1::uuid`,
+		initiative.ID).Scan(&cameras); err != nil || cameras != "3" {
+		t.Fatalf("stored params: camera_count = %q, %v", cameras, err)
+	}
+
+	// Решение 2: the snapshot is taken when the poll starts. The draft is pointed to
+	// another version of the registry; the start moves it to the current one.
+	var otherUpload string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO registry_uploads (house_id, version, total_area_centi, status)
+		SELECT $1::uuid, max(version) + 1, 100, 'preview' FROM registry_uploads WHERE house_id = $1::uuid
+		RETURNING id::text`, house.ID).Scan(&otherUpload); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM registry_uploads WHERE id = $1::uuid`, otherUpload); err != nil {
+			t.Errorf("cleanup registry upload: %v", err)
+		}
+	})
+	if _, err := pool.Exec(ctx, `UPDATE initiatives SET registry_upload_id = $2::uuid WHERE id = $1::uuid`,
+		initiative.ID, otherUpload); err != nil {
+		t.Fatal(err)
 	}
 
 	// Only the initiator starts the poll.
@@ -154,19 +184,19 @@ func TestPollFlowIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if started.Stage != "poll" || started.PollEndsAt == nil {
-		t.Fatalf("started = %+v", started)
+	if started.Stage != "poll" || started.PollEndsAt == nil || started.RegistryUploadID != initiative.RegistryUploadID {
+		t.Fatalf("started = %+v, want the poll on the current registry version %s", started, initiative.RegistryUploadID)
 	}
 	if _, err := initService.Get(ctx, "not-a-uuid"); !errors.Is(err, initiatives.ErrNotFound) {
 		t.Fatalf("malformed id: %v, want ErrNotFound", err)
 	}
 
-	// Invitations: one job per verified owner (Carol with two flats gets one), none
-	// for Dave. Other tests may add owners of their own, so only ours are counted.
+	// Invitations: in the demo house only the initiator gets one (решение 72), the other
+	// testers — Bob, Carol — do not receive Alice's text.
 	for _, c := range []struct {
 		user access.User
 		want int
-	}{{alice, 1}, {bob, 1}, {carol, 1}, {dave, 0}} {
+	}{{alice, 1}, {bob, 0}, {carol, 0}, {dave, 0}} {
 		var n int
 		if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE dedup_key = $1`,
 			fmt.Sprintf("%s:%s:%s", notify.TypePollInvite, initiative.ID, c.user.ID)).Scan(&n); err != nil {
@@ -175,6 +205,24 @@ func TestPollFlowIntegration(t *testing.T) {
 		if n != c.want {
 			t.Fatalf("poll_invite jobs of user %s = %d, want %d", c.user.ID, n, c.want)
 		}
+	}
+
+	// Quiet hours (решение 29): a poll started at night reaches the owners at 09:00 of the house.
+	var runAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT run_at FROM jobs WHERE dedup_key = $1`,
+		fmt.Sprintf("%s:%s:%s", notify.TypePollInvite, initiative.ID, alice.ID)).Scan(&runAt); err != nil {
+		t.Fatal(err)
+	}
+	houseRef, err := houses.House(ctx, house.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if until, quiet := notify.QuietHoursEnd(time.Now(), houseRef.Location()); quiet {
+		if !runAt.Equal(until) {
+			t.Fatalf("invitation at night: run_at = %s, want the end of the quiet hours %s", runAt, until)
+		}
+	} else if time.Since(runAt) > time.Minute || time.Until(runAt) > time.Minute {
+		t.Fatalf("invitation in the day time: run_at = %s, want now", runAt)
 	}
 
 	vote := func(u access.User, choice string, survey *Survey) CastResult {
@@ -277,12 +325,29 @@ func TestPollFlowIntegration(t *testing.T) {
 	if err := catalog.SeedCatalog(ctx); err != nil {
 		t.Fatal(err)
 	}
-	tpl, err := catalog.TemplateByCode(ctx, "cctv")
+	tpl, err := catalog.TemplateByCode(ctx, rules.TemplateVideoSurveillance)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tpl.Items) != 1 || tpl.Items[0].MajorityRule != string(rules.TwoThirdsOfAll) {
+	if len(tpl.Items) != 2 || tpl.Items[1].MajorityRule != string(rules.TwoThirdsOfAll) ||
+		!strings.Contains(tpl.Items[1].LegalReference, "ч. 1 ст. 46") {
 		t.Fatalf("template = %+v", tpl)
+	}
+
+	// One account creates at most MaxInitiativesPerDay initiatives in 24 hours: each
+	// may message the owners of the house.
+	for i := 1; i < initiatives.MaxInitiativesPerDay; i++ {
+		if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
+			HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
+			Title: fmt.Sprintf("Инициатива %d", i),
+		}); err != nil {
+			t.Fatalf("initiative %d: %v", i, err)
+		}
+	}
+	if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
+		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance, Title: "Лишняя",
+	}); !errors.Is(err, initiatives.ErrTooManyInitiatives) {
+		t.Fatalf("initiative over the daily limit: %v, want ErrTooManyInitiatives", err)
 	}
 }
 
@@ -341,6 +406,21 @@ func testQueue(t *testing.T, ctx context.Context, pool *pgxpool.Pool, notifier *
 	}
 	if s := status("done"); s != "done" {
 		t.Fatalf("status = %s, want done", s)
+	}
+
+	// A finished job keeps the MAX id of its addressee: it is purged after 30 days.
+	if _, err := pool.Exec(ctx, `UPDATE jobs SET updated_at = now() - interval '31 days' WHERE dedup_key = $1`, key("done")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := notifier.Purge(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var left int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE dedup_key = $1`, key("done")).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("a job finished 31 days ago was not purged")
 	}
 
 	// A failing job without attempts left fails for good.

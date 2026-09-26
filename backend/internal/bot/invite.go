@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
 
 	"maxhackathon/backend/internal/initiatives"
+	"maxhackathon/backend/internal/poll"
 	"maxhackathon/backend/internal/registry"
 )
 
@@ -19,6 +21,7 @@ type PollInviter struct {
 	Messages    Messages
 	Initiatives PollingReader
 	Houses      HouseReader
+	Me          Identity // the open_app button must name this bot
 }
 
 // PollingReader reads poll-relevant initiative fields (the initiatives module).
@@ -62,10 +65,8 @@ func (p *PollInviter) HandleJob(ctx context.Context, payload json.RawMessage) er
 		return fmt.Errorf("poll invite house: %w", err)
 	}
 
-	msg := maxapi.NewMessage().
-		SetUser(job.MaxUserID).
-		SetText(pollInviteText(initiative, house)).
-		AddKeyboard(pollKeyboard(initiative.ID))
+	text, kb := pollMessage(p.Me, initiative, house, nil)
+	msg := maxapi.NewMessage().SetUser(job.MaxUserID).SetText(text).AddKeyboard(kb)
 	if _, err := p.Messages.Send(ctx, msg); err != nil {
 		return fmt.Errorf("poll invite send: %w", err)
 	}
@@ -73,26 +74,43 @@ func (p *PollInviter) HandleJob(ctx context.Context, payload json.RawMessage) er
 	return nil
 }
 
-func pollInviteText(initiative initiatives.Polling, house registry.HouseRef) string {
+// pollMessage is the poll message: the invitation and, after a press, the same
+// message with the voter's current choice. Once the poll is over the voting
+// buttons are gone and only the button of the app stays.
+func pollMessage(me Identity, initiative initiatives.Polling, house registry.HouseRef, vote *poll.CastResult) (string, *model.Keyboard) {
 	text := fmt.Sprintf("Опрос поддержки: «%s»\n%s\n\n", initiative.Title, house.Address)
-	text += "Это опрос, чтобы понять мнение соседей. Он не является голосованием общего собрания и юридической силы не имеет.\n\n"
-	text += "Поддержите идею или выскажите сомнение — от этого зависит, пойдёт ли идея дальше."
+	text += "Это опрос, чтобы понять мнение соседей. Он не является голосованием общего собрания и юридической силы не имеет."
+
+	open := initiative.Stage == "poll"
+	switch {
+	case !open:
+		text += "\n\nОпрос завершён."
+	case initiative.PollEndsAt != nil:
+		text += "\n\nОпрос идёт до " + formatDeadline(*initiative.PollEndsAt, house.Location()) + "."
+	}
+	if vote != nil {
+		text += "\n\nВаш голос: " + voteSummary(*vote) + "."
+		if open {
+			text += " Изменить можно до конца опроса."
+		}
+	} else if open {
+		text += "\n\nПоддержите идею или выскажите сомнение — от этого зависит, пойдёт ли идея дальше."
+	}
 	if house.IsDemo {
 		text += "\n\n(демо-дом: все данные синтетические)"
 	}
 
-	return text
-}
-
-func pollKeyboard(initiativeID string) *model.Keyboard {
 	kb := model.NewKeyboard()
-	kb.AddRow().
-		AddButton(voteButton("Поддерживаю", initiativeID, "for")).
-		AddButton(voteButton("Против", initiativeID, "against"))
-	kb.AddRow().
-		AddButton(voteButton("Есть вопрос", initiativeID, "question"))
+	if open {
+		kb.AddRow().
+			AddButton(voteButton("Поддерживаю", initiative.ID, "for")).
+			AddButton(voteButton("Против", initiative.ID, "against"))
+		kb.AddRow().
+			AddButton(voteButton("Есть вопрос", initiative.ID, "question"))
+	}
+	kb.AddRow().AddButton(appButton(me, "Открыть приложение", house.InviteSlug))
 
-	return kb
+	return text, kb
 }
 
 func voteButton(text, initiativeID, action string) model.Button {
@@ -101,4 +119,16 @@ func voteButton(text, initiativeID, action string) model.Button {
 		Text:    text,
 		Payload: votePayloadPrefix + ":" + initiativeID + ":" + action,
 	}
+}
+
+var monthsGenitive = [...]string{
+	"января", "февраля", "марта", "апреля", "мая", "июня",
+	"июля", "августа", "сентября", "октября", "ноября", "декабря",
+}
+
+// formatDeadline shows a moment in the house's local time: «3 октября, 18:00».
+func formatDeadline(t time.Time, loc *time.Location) string {
+	local := t.In(loc)
+
+	return fmt.Sprintf("%d %s, %02d:%02d", local.Day(), monthsGenitive[local.Month()-1], local.Hour(), local.Minute())
 }

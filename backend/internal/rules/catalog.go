@@ -45,6 +45,9 @@ func NewCatalog(pool *pgxpool.Pool) *Catalog {
 // ErrTemplateNotFound means that no template with the code exists.
 var ErrTemplateNotFound = errors.New("template not found")
 
+// TemplateVideoSurveillance is the code of the «Видеонаблюдение» template (docs/API_DESCRIPTION.md).
+const TemplateVideoSurveillance = "video_surveillance"
+
 // TemplateByCode returns the latest version of the template with the given code.
 func (c *Catalog) TemplateByCode(ctx context.Context, code string) (CatalogTemplate, error) {
 	var t CatalogTemplate
@@ -132,17 +135,26 @@ func (c *Catalog) SeedCatalog(ctx context.Context) error {
 		return fmt.Errorf("seed decision type: %w", err)
 	}
 
-	// Шаблон «Видеонаблюдение» (docs/02, шаг 1): один вопрос повестки.
-	if err := c.seedTemplate(ctx, "cctv", 1,
+	// Шаблон «Видеонаблюдение» (docs/02, шаг 1). Первый вопрос — процедурный: протокол
+	// называет председателя, секретаря и тех, кто считал голоса (Приказ Минстроя № 44/пр),
+	// а избирает их само собрание большинством участников.
+	if err := c.seedTemplate(ctx, TemplateVideoSurveillance, 1,
 		"Видеонаблюдение",
 		"Камеры в подъездах: где ставим, кто хранит записи, как оплачиваем.",
-		[]CatalogItem{{
-			Position:     1,
-			Text:         "Установить видеонаблюдение в подъездах дома (монтаж, хранение записей и оплата — по проекту, приложенному к материалам собрания)",
-			DecisionCode: "common_property_use",
-		}},
+		[]CatalogItem{
+			{
+				Position:     1,
+				Text:         "Избрать председателя и секретаря общего собрания и наделить их полномочиями по подсчёту голосов",
+				DecisionCode: "routine",
+			},
+			{
+				Position:     2,
+				Text:         "Установить видеонаблюдение в подъездах дома (монтаж, хранение записей и оплата — по проекту, приложенному к материалам собрания)",
+				DecisionCode: "common_property_use",
+			},
+		},
 	); err != nil {
-		return fmt.Errorf("seed template cctv: %w", err)
+		return fmt.Errorf("seed template %s: %w", TemplateVideoSurveillance, err)
 	}
 
 	return nil
