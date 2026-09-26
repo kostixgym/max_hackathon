@@ -146,7 +146,7 @@ func TestQuestionFlow(t *testing.T) {
 		t.Fatalf("the press must be answered: %v", answers.calls)
 	}
 	prompt := msgs.sent[0].body
-	if !strings.Contains(prompt.Text, "Напишите вопрос") || !strings.Contains(prompt.Text, "без вашего имени") {
+	if !strings.Contains(prompt.Text, "Напишите вопрос инициатору") || !strings.Contains(prompt.Text, "Кто спросил, он не увидит") {
 		t.Fatalf("prompt = %q", prompt.Text)
 	}
 	if btn := prompt.Attachments[0].Payload.Buttons[0][0]; btn.Payload != cancelPayload {
@@ -157,8 +157,15 @@ func TestQuestionFlow(t *testing.T) {
 	if len(questions.asked) != 1 || questions.asked[0] != "  Кто будет смотреть записи?  " {
 		t.Fatalf("asked = %q", questions.asked)
 	}
-	if !strings.Contains(lastText(msgs), "Вопрос отправлен инициатору") {
-		t.Fatalf("confirmation = %q", lastText(msgs))
+	// The prompt turns into the confirmation with the question and loses «Отмена».
+	done, ok := msgs.edits["mid-1"]
+	if !ok || !strings.Contains(done.Text, "Вопрос отправлен инициатору") ||
+		!strings.Contains(done.Text, "<blockquote>Кто будет смотреть записи?</blockquote>") ||
+		done.Attachments == nil || len(done.Attachments) != 0 {
+		t.Fatalf("prompt after the question = %+v", done)
+	}
+	if len(msgs.sent) != 1 {
+		t.Fatalf("%d messages, want the prompt only: the confirmation replaces it", len(msgs.sent))
 	}
 
 	// The dialog is over: the next text is an ordinary message.
@@ -293,12 +300,76 @@ func TestAnswerFlow(t *testing.T) {
 	if !strings.Contains(lastText(msgs), "Напишите ответ") {
 		t.Fatalf("prompt = %q", lastText(msgs))
 	}
+	if !strings.Contains(lastText(msgs), "&lt;script&gt;") {
+		t.Fatalf("the prompt must quote the question, escaped: %q", lastText(msgs))
+	}
 	b.Handle(ctx, textUpdate(42, "Записи смотрит только УК"))
 	if len(questions.answered) != 1 || questions.answered[0] != "Записи смотрит только УК" {
 		t.Fatalf("answered = %q", questions.answered)
 	}
-	if !strings.Contains(lastText(msgs), "Ответ отправлен") {
-		t.Fatalf("confirmation = %q", lastText(msgs))
+	if done := msgs.edits["mid-1"]; !strings.Contains(done.Text, "Ответ отправлен соседу") {
+		t.Fatalf("prompt after the answer = %+v", done)
+	}
+}
+
+// The initiator answers questions, they do not ask their own initiative: an old
+// message with the button gets an explanation instead of a prompt.
+func TestInitiatorDoesNotAskThemselves(t *testing.T) {
+	questions := &fakeQuestions{}
+	b, msgs, _ := newQuestionBot(questions, true)
+	b.Initiatives = fakePolling{stage: "poll", initiator: "user-42"} // fakeUsers makes every presser «user-42»
+
+	b.Handle(context.Background(), callbackUpdate("cb-q", "pv:"+testInitiative+":question", 42))
+	b.Handle(context.Background(), textUpdate(42, "вопрос самому себе"))
+
+	if len(questions.asked) != 0 || !strings.Contains(msgs.sent[0].body.Text, "Это ваша инициатива") {
+		t.Fatalf("asked = %q, reply = %q", questions.asked, msgs.sent[0].body.Text)
+	}
+}
+
+func pollLinkUpdate(maxUserID int64, initiativeID string) model.Update {
+	return model.Update{UpdateType: model.UpdateBotStarted, UserID: maxUserID, ChatID: 7,
+		Payload: pollStartPrefix + initiativeID, User: &model.User{UserID: maxUserID}}
+}
+
+// The initiator shares the poll link; the bot sends the poll to a member of the house
+// who opens it, and only the title to anyone else (решение 19).
+func TestPollLink(t *testing.T) {
+	ctx := context.Background()
+
+	b, msgs, _ := newQuestionBot(&fakeQuestions{}, true)
+	b.Progress = fakeProgress{forCenti: 6350}
+	b.Handle(ctx, pollLinkUpdate(43, testInitiative))
+	if len(msgs.sent) != 1 || msgs.sent[0].to != 43 {
+		t.Fatalf("sent = %+v, want the poll to the neighbour 43", msgs.sent)
+	}
+	body := msgs.sent[0].body
+	if !strings.Contains(body.Text, "Опрос соседей: «Камеры»") || !strings.Contains(body.Text, "63,50 м²") {
+		t.Fatalf("text = %s", body.Text)
+	}
+	if buttons := body.Attachments[0].Payload.Buttons; buttons[1][0].Payload != "pv:"+testInitiative+":question" {
+		t.Fatalf("a neighbour asks questions: %+v", buttons)
+	}
+
+	b, msgs, _ = newQuestionBot(&fakeQuestions{}, false)
+	b.Handle(ctx, pollLinkUpdate(43, testInitiative))
+	if text := msgs.sent[0].body.Text; !strings.Contains(text, "Соседи обсуждают «Камеры»") ||
+		!strings.Contains(text, "подтверждённые жители") || strings.Contains(text, "Поддержали") {
+		t.Fatalf("not a member: %s", text)
+	}
+
+	// A draft or an unknown poll: the ordinary greeting, nothing about the initiative.
+	for name, polling := range map[string]fakePolling{
+		"draft":   {stage: "draft"},
+		"unknown": {err: initiatives.ErrNotFound},
+	} {
+		b, msgs, _ = newQuestionBot(&fakeQuestions{}, true)
+		b.Initiatives = polling
+		b.Handle(ctx, pollLinkUpdate(43, testInitiative))
+		if len(msgs.sent) != 1 || strings.Contains(msgs.sent[0].body.Text, "Камеры") ||
+			!strings.Contains(msgs.sent[0].body.Text, "Здравствуйте") {
+			t.Fatalf("%s: %+v", name, msgs.sent)
+		}
 	}
 }
 
@@ -352,6 +423,9 @@ func TestRelayQuestionToInitiator(t *testing.T) {
 		t.Fatalf("sent = %+v, want one message to the initiator 1042", msgs.sent)
 	}
 	body := msgs.sent[0].body
+	if !strings.Contains(body.Text, "Сосед спрашивает про вашу инициативу") {
+		t.Fatalf("who asks whom must be clear: %s", body.Text)
+	}
 	if body.Format != model.FormatHTML || !strings.Contains(body.Text, "&lt;script&gt;") ||
 		strings.Contains(body.Text, "<script>") || !strings.Contains(body.Text, "Камеры &amp; &lt;b&gt;домофон&lt;/b&gt;") {
 		t.Fatalf("text = %q, want the user texts escaped", body.Text)
@@ -369,7 +443,8 @@ func TestRelayAnswerToAsker(t *testing.T) {
 	if err := relay.HandleAnswered(context.Background(), relayJob(t, testQuestion)); err != nil {
 		t.Fatal(err)
 	}
-	if len(msgs.sent) != 1 || msgs.sent[0].to != 1007 || !strings.Contains(msgs.sent[0].body.Text, "Только &lt;УК&gt;") {
+	if len(msgs.sent) != 1 || msgs.sent[0].to != 1007 || !strings.Contains(msgs.sent[0].body.Text, "Только &lt;УК&gt;") ||
+		!strings.Contains(msgs.sent[0].body.Text, "Инициатор ответил на ваш вопрос") {
 		t.Fatalf("sent = %+v, want the escaped answer to the asker 1007", msgs.sent)
 	}
 }

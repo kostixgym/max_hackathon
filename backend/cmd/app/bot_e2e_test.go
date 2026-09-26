@@ -133,6 +133,7 @@ type fakeMAX struct {
 	sentBodies []map[string]any
 	answers    []string // notification text of every POST /answers
 	edits      []string // text of the message updated by every POST /answers
+	putEdits   []string // "<message_id>: <text>" of every PUT /messages
 	sent       chan struct{}
 	answered   chan struct{}
 }
@@ -201,11 +202,18 @@ func (f *fakeMAX) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.sentBodies = append(f.sentBodies, body)
-		_, _ = io.WriteString(w, `{"message":{}}`)
+		_, _ = fmt.Fprintf(w, `{"message":{"body":{"mid":"mid-%d"}}}`, len(f.sentBodies))
 		select {
 		case f.sent <- struct{}{}:
 		default:
 		}
+	case r.Method == http.MethodPut && r.URL.Path == "/messages":
+		var body struct {
+			Text string `json:"text"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.putEdits = append(f.putEdits, r.URL.Query().Get("message_id")+": "+body.Text)
+		_, _ = io.WriteString(w, `{"success":true}`)
 	case r.Method == http.MethodPost && r.URL.Path == "/answers":
 		var body struct {
 			Notification string `json:"notification"`
@@ -271,17 +279,17 @@ func TestBotEndToEndWithFakeMAX(t *testing.T) {
 	}
 	waitFor(fake.sent, "greeting for bot_started")
 	waitFor(fake.answered, "answer to the vote callback")
-	// Greeting, the prompt for the question and its confirmation.
+	// The greeting and the prompt for the question; the prompt then turns into the confirmation.
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		fake.mu.Lock()
-		n := len(fake.sentBodies)
+		n, edited := len(fake.sentBodies), len(fake.putEdits)
 		fake.mu.Unlock()
-		if n >= 3 {
+		if n >= 2 && edited >= 1 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("%d messages sent, want the greeting, the prompt and the confirmation", n)
+			t.Fatalf("%d messages sent and %d edited, want the greeting, the prompt and its edit", n, edited)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -297,9 +305,9 @@ func TestBotEndToEndWithFakeMAX(t *testing.T) {
 	if fake.badAuth {
 		t.Fatal("request without the bot token in Authorization")
 	}
-	// The greeting goes to the dialog 7, the rest to the user who pressed; the group chat 9 gets nothing.
-	if len(fake.sentTo) != 3 || fake.sentTo[0] != "chat:7" || fake.sentTo[1] != "user:42" || fake.sentTo[2] != "user:42" {
-		t.Fatalf("messages sent to %q, want chat:7, user:42, user:42", fake.sentTo)
+	// The greeting goes to the dialog 7, the prompt to the user who pressed; the group chat 9 gets nothing.
+	if len(fake.sentTo) != 2 || fake.sentTo[0] != "chat:7" || fake.sentTo[1] != "user:42" {
+		t.Fatalf("messages sent to %q, want chat:7 and user:42", fake.sentTo)
 	}
 
 	// attachments[0] = inline keyboard, buttons[0][0] = open_app with the house slug.
@@ -342,8 +350,10 @@ func TestBotEndToEndWithFakeMAX(t *testing.T) {
 	if len(questions.asked) != 1 || questions.asked[0] != "Кто будет смотреть записи?" {
 		t.Fatalf("asked = %q", questions.asked)
 	}
-	if text := fake.sentBodies[2]["text"].(string); !strings.Contains(text, "Вопрос отправлен инициатору") {
-		t.Fatalf("confirmation = %q", text)
+	// The prompt (the second message) is edited into the confirmation.
+	if len(fake.putEdits) != 1 || !strings.HasPrefix(fake.putEdits[0], "mid-2: ") ||
+		!strings.Contains(fake.putEdits[0], "Вопрос отправлен инициатору") {
+		t.Fatalf("edits = %q, want the prompt mid-2 turned into the confirmation", fake.putEdits)
 	}
 
 	// The marker advanced: every batch was consumed and persisted.

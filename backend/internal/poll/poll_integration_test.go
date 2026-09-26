@@ -257,6 +257,13 @@ func TestPollFlowIntegration(t *testing.T) {
 		}
 	}
 
+	// The initiator's invitation is marked: their message has no «Есть вопрос» (решение 78).
+	var toInitiator bool
+	if err := pool.QueryRow(ctx, `SELECT (payload->>'initiator')::boolean FROM jobs WHERE dedup_key = $1`,
+		fmt.Sprintf("%s:%s:%s", notify.TypePollInvite, initiative.ID, alice.ID)).Scan(&toInitiator); err != nil || !toInitiator {
+		t.Fatalf("invitation of the initiator: initiator = %v, %v", toInitiator, err)
+	}
+
 	// Quiet hours (решение 29): a poll started at night reaches the owners at 09:00 of the house.
 	var runAt time.Time
 	if err := pool.QueryRow(ctx, `SELECT run_at FROM jobs WHERE dedup_key = $1`,
@@ -522,6 +529,10 @@ func testQuestions(t *testing.T, ctx context.Context, pool *pgxpool.Pool, initSe
 	}
 	if _, err := ask("Лишний вопрос"); !errors.Is(err, initiatives.ErrTooManyQuestions) {
 		t.Fatalf("question over the daily limit: %v, want ErrTooManyQuestions", err)
+	}
+	// The initiator answers questions, they do not ask their own initiative.
+	if _, err := initService.AskQuestion(ctx, initiativeID, alice.ID, "Сам себе"); !errors.Is(err, initiatives.ErrOwnInitiative) {
+		t.Fatalf("question of the initiator: %v, want ErrOwnInitiative", err)
 	}
 
 	if _, err := initService.AnswerQuestion(ctx, q.ID, bob.ID, "Отвечу сам"); !errors.Is(err, initiatives.ErrNotInitiator) {

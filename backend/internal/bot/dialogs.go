@@ -15,9 +15,10 @@ type dialogs struct {
 }
 
 type dialog struct {
-	kind  string // dialogQuestion or dialogAnswer
-	ref   string // the initiative for a question, the question for an answer
-	until time.Time
+	kind   string // dialogQuestion or dialogAnswer
+	ref    string // the initiative for a question, the question for an answer
+	prompt string // the message that asked for the text: it turns into the confirmation
+	until  time.Time
 }
 
 const (
@@ -27,7 +28,7 @@ const (
 	dialogTTL = 15 * time.Minute
 )
 
-func (d *dialogs) set(maxUserID int64, kind, ref string, now time.Time) {
+func (d *dialogs) set(maxUserID int64, kind, ref, prompt string, now time.Time) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.items == nil {
@@ -38,7 +39,7 @@ func (d *dialogs) set(maxUserID int64, kind, ref string, now time.Time) {
 			delete(d.items, id) // few users wait at once: a sweep on write keeps the map small
 		}
 	}
-	d.items[maxUserID] = dialog{kind: kind, ref: ref, until: now.Add(dialogTTL)}
+	d.items[maxUserID] = dialog{kind: kind, ref: ref, prompt: prompt, until: now.Add(dialogTTL)}
 }
 
 // take returns the pending dialog of the user and forgets it.

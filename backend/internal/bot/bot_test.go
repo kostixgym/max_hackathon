@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"reflect"
@@ -19,15 +20,28 @@ type sentMessage struct {
 	to   int64 // the MAX user id, when the message is addressed to a user
 }
 
-type fakeMessages struct{ sent []sentMessage }
+type fakeMessages struct {
+	sent  []sentMessage
+	edits map[string]model.NewMessageBody // by message id
+}
 
+// Send gives every message the id «mid-N», N counting from 1.
 func (f *fakeMessages) Send(_ context.Context, msg *maxapi.Message) (model.SendMessageResult, error) {
 	// The client keeps the addressee in an unexported field; reading it is the only way
 	// to check who gets a relayed question or answer.
 	to := reflect.ValueOf(msg).Elem().FieldByName("userID").Int()
 	f.sent = append(f.sent, sentMessage{body: msg.MessageBody(), to: to})
 
-	return model.SendMessageResult{}, nil
+	return model.SendMessageResult{Message: model.Message{Body: model.MessageBody{Mid: fmt.Sprintf("mid-%d", len(f.sent))}}}, nil
+}
+
+func (f *fakeMessages) EditMessage(_ context.Context, id string, body model.NewMessageBody) (model.SimpleQueryResult, error) {
+	if f.edits == nil {
+		f.edits = map[string]model.NewMessageBody{}
+	}
+	f.edits[id] = body
+
+	return model.SimpleQueryResult{Success: true}, nil
 }
 
 type fakeHouses struct{}

@@ -46,6 +46,7 @@ func (p *PollInviter) HandleJob(ctx context.Context, payload json.RawMessage) er
 	var job struct {
 		InitiativeID string `json:"initiative_id"`
 		MaxUserID    int64  `json:"max_user_id"`
+		Initiator    bool   `json:"initiator"` // the addressee leads the poll
 	}
 	if err := json.Unmarshal(payload, &job); err != nil {
 		return fmt.Errorf("poll invite payload: %w", err)
@@ -73,7 +74,7 @@ func (p *PollInviter) HandleJob(ctx context.Context, payload json.RawMessage) er
 		return fmt.Errorf("poll invite house: %w", err)
 	}
 
-	view := pollView{initiative: initiative, house: house, now: now}
+	view := pollView{initiative: initiative, house: house, now: now, forInitiator: job.Initiator}
 	if p.Progress != nil {
 		// The support line is a courtesy: without it the invitation still goes out.
 		if progress, err := p.Progress.Progress(ctx, initiative.ID); err == nil {

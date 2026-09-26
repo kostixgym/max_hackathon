@@ -18,12 +18,14 @@ import (
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
 
+	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/registry"
 )
 
-// Messages sends messages (the MAX client).
+// Messages sends and edits messages (the MAX client).
 type Messages interface {
 	Send(ctx context.Context, msg *maxapi.Message) (model.SendMessageResult, error)
+	EditMessage(ctx context.Context, messageID string, body model.NewMessageBody) (model.SimpleQueryResult, error)
 }
 
 // Houses finds a house by its invite slug (the registry module).
@@ -119,6 +121,12 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 }
 
 func (b *Bot) start(ctx context.Context, u model.Update, slug string) {
+	if id, ok := strings.CutPrefix(slug, pollStartPrefix); ok {
+		if b.openPoll(ctx, u, id) {
+			return
+		}
+		slug = "" // no such poll: the generic greeting
+	}
 	if slug != "" && openAppPayload.MatchString(slug) {
 		house, err := b.Houses.HouseBySlug(ctx, slug)
 		switch {
@@ -132,6 +140,62 @@ func (b *Bot) start(ctx context.Context, u model.Update, slug string) {
 	}
 
 	b.send(ctx, u, genericGreeting, openAppButton(b.Me, "Открыть приложение", ""))
+}
+
+// openPoll answers a poll link from the initiator (решение 78): a verified member of
+// the house gets the poll message, anyone else only the title and how to join
+// (решение 19). It reports false when there is no such poll to show.
+func (b *Bot) openPoll(ctx context.Context, u model.Update, initiativeID string) bool {
+	if b.Users == nil || b.Initiatives == nil || b.HousesByID == nil || b.Members == nil || u.UserID <= 0 {
+		return false
+	}
+	initiative, err := b.Initiatives.Polling(ctx, initiativeID)
+	if err != nil {
+		if !errors.Is(err, initiatives.ErrNotFound) {
+			b.Log.Error("bot: initiative of a poll link", "err", err)
+		}
+
+		return false
+	}
+	if initiative.Stage == initiatives.StageDraft {
+		return false // a draft is seen by its initiator only (решение 76)
+	}
+	house, err := b.HousesByID.House(ctx, initiative.HouseID)
+	if err != nil {
+		b.Log.Error("bot: house of a poll link", "err", err)
+
+		return false
+	}
+	user, err := b.Users.EnsureUser(ctx, u.UserID)
+	if err != nil {
+		b.Log.Error("bot: ensure user of a poll link", "err", err)
+
+		return false
+	}
+	member, err := b.Members.MayViewInitiatives(ctx, user.ID, house.ID)
+	if err != nil {
+		b.Log.Error("bot: check member of a poll link", "err", err)
+
+		return false
+	}
+	if !member {
+		b.sendHTML(ctx, u.UserID, fmt.Sprintf("<b>Соседи обсуждают «%s»</b>\n%s\n\n"+
+			"Голосовать и задавать вопросы могут подтверждённые жители дома. Откройте приложение и подтвердите квартиру.",
+			esc(initiative.Title), esc(house.Address)), openAppButton(b.Me, "Открыть приложение", house.InviteSlug))
+
+		return true
+	}
+
+	view := pollView{initiative: initiative, house: house, now: b.now(), forInitiator: initiative.IsInitiator(user.ID)}
+	if b.Progress != nil {
+		if progress, err := b.Progress.Progress(ctx, initiative.ID); err == nil {
+			view.progress = &progress
+		}
+	}
+	text, kb := view.render(b.Me)
+	b.sendHTML(ctx, u.UserID, text, kb)
+
+	return true
 }
 
 func (b *Bot) help(ctx context.Context, u model.Update) {

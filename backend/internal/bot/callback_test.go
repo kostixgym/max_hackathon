@@ -211,8 +211,8 @@ func TestCallbackUpdatesPollMessage(t *testing.T) {
 	b.Handle(context.Background(), callbackUpdate("cb-1", "pv:"+testInitiative+":for", 42))
 
 	msg := answers.messages[0]
-	if msg == nil || msg.Format != model.FormatHTML || !strings.Contains(msg.Text, "<mark>Ваш голос: «за», 26,15 м² (кв. 45)</mark>") {
-		t.Fatalf("updated message = %+v, want the current choice highlighted", msg)
+	if msg == nil || msg.Format != model.FormatHTML || !strings.Contains(msg.Text, "<b>Ваш голос: «за», 26,15 м² (кв. 45)</b>") {
+		t.Fatalf("updated message = %+v, want the current choice in bold", msg)
 	}
 	buttons := msg.Attachments[0].Payload.Buttons
 	if len(buttons) != 3 || buttons[0][0].Type != model.ButtonCallback {

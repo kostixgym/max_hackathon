@@ -17,7 +17,8 @@ import (
 type fakePolling struct {
 	stage      string
 	err        error
-	endsBefore bool // the term is before testNow
+	endsBefore bool   // the term is before testNow
+	initiator  string // the user id of the initiator
 }
 
 func (f fakePolling) Polling(_ context.Context, id string) (initiatives.Polling, error) {
@@ -31,7 +32,12 @@ func (f fakePolling) Polling(_ context.Context, id string) (initiatives.Polling,
 		endsAt = testNow.Add(-time.Minute)
 	}
 
-	return initiatives.Polling{ID: id, HouseID: "house-1", Title: "Камеры", Stage: f.stage, PollEndsAt: &endsAt}, nil
+	p := initiatives.Polling{ID: id, HouseID: "house-1", Title: "Камеры", Stage: f.stage, PollEndsAt: &endsAt}
+	if f.initiator != "" {
+		p.InitiatorUserID = &f.initiator
+	}
+
+	return p, nil
 }
 
 // fakeProgress: a demo house of 3 000 м² with forCenti hundredths of м² «за».
@@ -112,5 +118,37 @@ func TestPollInviteSkipsClosedPolls(t *testing.T) {
 				t.Fatalf("sent %d messages, want 0", len(msgs.sent))
 			}
 		})
+	}
+}
+
+// The initiator answers questions instead of asking them: their message has no
+// «Есть вопрос» but the link to call the neighbours (решение 78).
+func TestPollInviteToInitiator(t *testing.T) {
+	msgs := &fakeMessages{}
+	inviter := &PollInviter{Messages: msgs, Initiatives: fakePolling{stage: "poll"}, Houses: fakeHouseReader{},
+		Me: Identity{UserID: 555, Username: "dom_test_bot"}, Now: func() time.Time { return testNow }}
+	payload, err := json.Marshal(map[string]any{"initiative_id": testInitiative, "max_user_id": 42, "initiator": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := inviter.HandleJob(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	body := msgs.sent[0].body
+	link := "https://max.ru/dom_test_bot?start=poll_" + testInitiative
+	if !strings.Contains(body.Text, "Вы инициатор") || !strings.Contains(body.Text, `<a href="`+link+`">`) {
+		t.Fatalf("text = %s", body.Text)
+	}
+	buttons := body.Attachments[0].Payload.Buttons
+	if len(buttons) != 3 || buttons[1][0].Type != model.ButtonClipboard || buttons[1][0].Payload != link {
+		t.Fatalf("buttons = %+v, want the votes, the link to copy and the app", buttons)
+	}
+	for _, row := range buttons {
+		for _, btn := range row {
+			if strings.HasSuffix(btn.Payload, ":question") {
+				t.Fatalf("the initiator got «Есть вопрос»: %+v", btn)
+			}
+		}
 	}
 }

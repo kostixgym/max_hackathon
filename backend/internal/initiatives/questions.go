@@ -48,6 +48,8 @@ var (
 	ErrQuestionNotFound   = errors.New("question not found")
 	ErrQuestionAnswered   = errors.New("the question is already answered")
 	ErrNoInitiatorToReach = errors.New("the initiative has no initiator to answer")
+	// ErrOwnInitiative: the initiator answers questions, they do not ask themselves.
+	ErrOwnInitiative = errors.New("the initiator does not ask questions to their own initiative")
 )
 
 // takesQuestions: a question makes sense while the initiative goes on. A draft is
@@ -72,6 +74,9 @@ func (s *Service) AskQuestion(ctx context.Context, initiativeID, userID, text st
 	}
 	if in.InitiatorUserID == nil {
 		return Question{}, ErrNoInitiatorToReach
+	}
+	if *in.InitiatorUserID == userID {
+		return Question{}, ErrOwnInitiative
 	}
 
 	q := Question{InitiativeID: in.ID, AskedByUserID: userID, Text: text}

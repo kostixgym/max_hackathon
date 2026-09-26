@@ -28,6 +28,9 @@ type pollView struct {
 	vote       *poll.CastResult // the voter's choice after a press; nil in the invitation
 	progress   *poll.Progress   // the support at the moment; nil when unknown
 	now        time.Time
+	// forInitiator: the initiator does not ask questions, they answer them. Their
+	// message tells where the questions come and gives the link for the neighbours.
+	forInitiator bool
 }
 
 // render builds the poll message: the invitation and, after a press, the same message
@@ -49,10 +52,17 @@ func (v pollView) render(me Identity) (string, *model.Keyboard) {
 		b.WriteString("\n\n" + supportLine(*v.progress))
 	}
 	if v.vote != nil {
-		fmt.Fprintf(&b, "\n\n<mark>Ваш голос: %s</mark>", voteSummary(*v.vote))
+		// <mark> is not visible in the MAX clients (проверка 26.09), bold is.
+		fmt.Fprintf(&b, "\n\n<b>Ваш голос: %s</b>", voteSummary(*v.vote))
 		if open {
 			b.WriteString("\nИзменить голос можно до конца опроса.")
 		}
+	}
+	link := pollLink(me, v.initiative.ID)
+	askable := v.initiative.TakesQuestions()
+	if v.forInitiator && askable {
+		fmt.Fprintf(&b, "\n\n<b>Вы инициатор.</b> Вопросы соседей придут сюда, в этот чат, — ответить можно кнопкой под вопросом. "+
+			"Позовите соседей: скопируйте ссылку кнопкой ниже или перешлите <a href=\"%s\">эту ссылку</a> в домовой чат.", esc(link))
 	}
 	if v.house.IsDemo {
 		b.WriteString("\n\n<i>Демо-дом: все данные синтетические.</i>")
@@ -64,12 +74,24 @@ func (v pollView) render(me Identity) (string, *model.Keyboard) {
 			AddButton(voteButton(choiceLabel("Поддерживаю", poll.ChoiceFor, v.vote), v.initiative.ID, "for")).
 			AddButton(voteButton(choiceLabel("Против", poll.ChoiceAgainst, v.vote), v.initiative.ID, "against"))
 	}
-	if v.initiative.TakesQuestions() {
+	switch {
+	case v.forInitiator && askable:
+		kb.AddRow().AddClipboard("Скопировать ссылку для соседей", link)
+	case askable:
 		kb.AddRow().AddButton(voteButton("Есть вопрос", v.initiative.ID, "question"))
 	}
 	kb.AddRow().AddButton(appButton(me, "Открыть приложение", v.house.InviteSlug))
 
 	return b.String(), kb
+}
+
+// pollStartPrefix marks the start payload of a poll link: max.ru/<bot>?start=poll_<id>.
+const pollStartPrefix = "poll_"
+
+// pollLink is the link that brings a neighbour to the poll: the bot sends them the
+// poll message (решение 78). The initiator shares it in the chat of the house.
+func pollLink(me Identity, initiativeID string) string {
+	return "https://max.ru/" + me.Username + "?start=" + pollStartPrefix + initiativeID
 }
 
 // choiceLabel marks the button of the current vote.

@@ -277,6 +277,8 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 				Payload: map[string]any{
 					"initiative_id": initiativeID,
 					"max_user_id":   r.MaxUserID,
+					// The initiator's message has no «Есть вопрос»: they answer questions.
+					"initiator": r.UserID == byUserID,
 				},
 				RunAt: runAt,
 			})
@@ -328,7 +330,7 @@ func invitees(all []Recipient, house registry.HouseRef, initiatorID string) []Re
 	return own
 }
 
-// Polling is the part of the initiative the poll module needs.
+// Polling is the part of the initiative the poll module and the bot need.
 type Polling struct {
 	ID               string
 	HouseID          string
@@ -336,6 +338,14 @@ type Polling struct {
 	Stage            string
 	PollEndsAt       *time.Time
 	RegistryUploadID string
+	// InitiatorUserID: the initiator's own poll message differs — they answer
+	// questions instead of asking them. Nil when the account is deleted.
+	InitiatorUserID *string
+}
+
+// IsInitiator reports whether the user leads the poll.
+func (p Polling) IsInitiator(userID string) bool {
+	return p.InitiatorUserID != nil && *p.InitiatorUserID == userID
 }
 
 // Polling returns the poll-relevant fields of the initiative.
@@ -346,10 +356,10 @@ func (s *Service) Polling(ctx context.Context, id string) (Polling, error) {
 	}
 	var pollEndsAt *time.Time
 	err := s.pool.QueryRow(ctx, `
-		SELECT id::text, house_id::text, title, stage, poll_ends_at, registry_upload_id::text
+		SELECT id::text, house_id::text, title, stage, poll_ends_at, registry_upload_id::text, initiator_user_id::text
 		FROM initiatives
 		WHERE id = $1::uuid AND hidden_at IS NULL`, id,
-	).Scan(&p.ID, &p.HouseID, &p.Title, &p.Stage, &pollEndsAt, &p.RegistryUploadID)
+	).Scan(&p.ID, &p.HouseID, &p.Title, &p.Stage, &pollEndsAt, &p.RegistryUploadID, &p.InitiatorUserID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return p, ErrNotFound
 	}

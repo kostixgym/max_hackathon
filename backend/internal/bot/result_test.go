@@ -111,7 +111,7 @@ func TestPollMessageEscapes(t *testing.T) {
 		!strings.Contains(text, "&lt;a href=&#34;https://evil&#34;&gt;") || !strings.Contains(text, "д. 1 &amp; 2") {
 		t.Fatalf("text = %s", text)
 	}
-	if !strings.Contains(text, "<mark>Ваш голос: «против», 48,00 м² (кв. &lt;i&gt;45&lt;/i&gt;)</mark>") {
+	if !strings.Contains(text, "<b>Ваш голос: «против», 48,00 м² (кв. &lt;i&gt;45&lt;/i&gt;)</b>") {
 		t.Fatalf("the vote line = %s", text)
 	}
 	if row := kb.Build().Payload.Buttons[0]; row[0].Text != "Поддерживаю" || row[1].Text != "✅ Против" {

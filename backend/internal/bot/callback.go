@@ -101,14 +101,14 @@ func (b *Bot) callback(ctx context.Context, u model.Update) {
 	case errors.Is(err, poll.ErrNotOwner):
 		b.notice(ctx, cb, "Голосуют только подтверждённые собственники. Откройте приложение и подтвердите квартиру")
 	case errors.Is(err, poll.ErrPollClosed):
-		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, nil, "Опрос завершён")
+		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, user.ID, nil, "Опрос завершён")
 	case errors.Is(err, poll.ErrNoWeight):
 		b.notice(ctx, cb, "Вашей записи нет в версии реестра этого опроса. Откройте приложение и отправьте «Данные неверны»")
 	case err != nil:
 		b.Log.Error("bot: cast vote", "err", err, "initiative", initiativeID)
 		b.notice(ctx, cb, "Не получилось учесть голос, попробуйте ещё раз")
 	default:
-		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, &result, voteAcceptedText(result))
+		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, user.ID, &result, voteAcceptedText(result))
 	}
 }
 
@@ -120,15 +120,16 @@ func (b *Bot) answer(ctx context.Context, callbackID, notification string) {
 // vote it shows the voter's choice, after the end of the poll the voting buttons are
 // gone (решение 68: POST /answers updates the message, no stored message id is needed).
 // If the message cannot be rebuilt, the notification alone is shown.
-func (b *Bot) answerWithMessage(ctx context.Context, callbackID, initiativeID string, vote *poll.CastResult, notification string) {
+func (b *Bot) answerWithMessage(ctx context.Context, callbackID, initiativeID, viewerID string, vote *poll.CastResult, notification string) {
 	answer := model.CallbackAnswer{Notification: &notification}
-	if body, ok := b.pollMessageBody(ctx, initiativeID, vote); ok {
+	if body, ok := b.pollMessageBody(ctx, initiativeID, viewerID, vote); ok {
 		answer.Message = &body
 	}
 	b.sendAnswer(ctx, callbackID, answer)
 }
 
-func (b *Bot) pollMessageBody(ctx context.Context, initiativeID string, vote *poll.CastResult) (model.NewMessageBody, bool) {
+// pollMessageBody renders the poll message for the viewer (a user id of ours).
+func (b *Bot) pollMessageBody(ctx context.Context, initiativeID, viewerID string, vote *poll.CastResult) (model.NewMessageBody, bool) {
 	if b.Initiatives == nil || b.HousesByID == nil {
 		return model.NewMessageBody{}, false
 	}
@@ -147,7 +148,8 @@ func (b *Bot) pollMessageBody(ctx context.Context, initiativeID string, vote *po
 		return model.NewMessageBody{}, false
 	}
 
-	view := pollView{initiative: initiative, house: house, vote: vote, now: b.now()}
+	view := pollView{initiative: initiative, house: house, vote: vote, now: b.now(),
+		forInitiator: initiative.IsInitiator(viewerID)}
 	if b.Progress != nil {
 		// Without the support line the message still shows the vote.
 		if progress, err := b.Progress.Progress(ctx, initiativeID); err == nil {

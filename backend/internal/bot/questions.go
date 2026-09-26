@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
@@ -89,13 +90,17 @@ func (b *Bot) startQuestion(ctx context.Context, cb *model.Callback, initiativeI
 
 		return
 	}
+	if initiative.IsInitiator(user.ID) {
+		// An old message of the initiator may still carry the button.
+		b.notice(ctx, cb, "Это ваша инициатива: вопросы задают соседи, а вы отвечаете на них здесь, в чате")
 
-	b.dialogs.set(cb.User.UserID, dialogQuestion, initiative.ID, b.now())
+		return
+	}
+
 	b.answer(ctx, cb.CallbackID, "Напишите вопрос следующим сообщением")
-	b.sendHTML(ctx, cb.User.UserID, fmt.Sprintf(
-		"Напишите вопрос по инициативе <b>«%s»</b> одним сообщением.\n\n"+
-			"Его получит инициатор — без вашего имени. Ответ придёт сюда же.", esc(initiative.Title)),
-		cancelKeyboard())
+	b.prompt(ctx, cb.User.UserID, dialogQuestion, initiative.ID, fmt.Sprintf(
+		"Напишите вопрос инициатору <b>«%s»</b> одним сообщением.\n\n"+
+			"Кто спросил, он не увидит. Ответ придёт сюда же.", esc(initiative.Title)))
 }
 
 // startAnswer handles «Ответить» on a relayed question: only the initiator answers,
@@ -149,10 +154,35 @@ func (b *Bot) startAnswer(ctx context.Context, cb *model.Callback, questionID st
 		return
 	}
 
-	b.dialogs.set(cb.User.UserID, dialogAnswer, q.ID, b.now())
 	b.answer(ctx, cb.CallbackID, "Напишите ответ следующим сообщением")
-	b.sendHTML(ctx, cb.User.UserID,
-		"Напишите ответ одним сообщением. Его получит сосед, который задал вопрос.", cancelKeyboard())
+	b.prompt(ctx, cb.User.UserID, dialogAnswer, q.ID, fmt.Sprintf(
+		"Напишите ответ соседу одним сообщением.\n\n<i>Вопрос:</i>\n<blockquote>%s</blockquote>", esc(q.Text)))
+}
+
+// prompt asks the user for a text and waits for it; the prompt message turns into
+// the confirmation when the text is sent.
+func (b *Bot) prompt(ctx context.Context, maxUserID int64, kind, ref, text string) {
+	msg := maxapi.NewMessage().SetUser(maxUserID).SetText(text).SetFormat(model.FormatHTML).AddKeyboard(cancelKeyboard())
+	res, err := b.Messages.Send(ctx, msg)
+	if err != nil {
+		b.Log.Error("bot: send prompt", "err", err)
+
+		return
+	}
+	b.dialogs.set(maxUserID, kind, ref, res.Message.Body.Mid, b.now())
+}
+
+// done turns the prompt into the confirmation without buttons, so no stale «Отмена»
+// stays in the chat. If the prompt cannot be edited, the confirmation is a new message.
+func (b *Bot) done(ctx context.Context, maxUserID int64, d dialog, text string) {
+	if d.prompt != "" {
+		body := maxapi.NewMessage().SetText(text).SetFormat(model.FormatHTML).MessageBody()
+		body.Attachments = []model.Attachment{} // an empty list removes the keyboard
+		if res, err := b.Messages.EditMessage(ctx, d.prompt, body); err == nil && res.Success {
+			return
+		}
+	}
+	b.sendHTML(ctx, maxUserID, text, nil)
 }
 
 // cancelDialog handles «Отмена» on a prompt and removes the button from it.
@@ -176,8 +206,7 @@ func (b *Bot) dialogText(ctx context.Context, u model.Update) bool {
 	text := u.GetMessage().Body.Text
 	if text == "" {
 		// A sticker or a photo: keep waiting for the text.
-		b.dialogs.set(u.UserID, d.kind, d.ref, b.now())
-		b.sendHTML(ctx, u.UserID, "Пришлите текст одним сообщением или нажмите «Отмена».", cancelKeyboard())
+		b.prompt(ctx, u.UserID, d.kind, d.ref, "Пришлите текст одним сообщением или нажмите «Отмена».")
 
 		return true
 	}
@@ -191,15 +220,16 @@ func (b *Bot) dialogText(ctx context.Context, u model.Update) bool {
 
 	switch d.kind {
 	case dialogQuestion:
-		b.askQuestion(ctx, u.UserID, user.ID, d.ref, text)
+		b.askQuestion(ctx, u.UserID, user.ID, d, text)
 	case dialogAnswer:
-		b.answerQuestion(ctx, u.UserID, user.ID, d.ref, text)
+		b.answerQuestion(ctx, u.UserID, user.ID, d, text)
 	}
 
 	return true
 }
 
-func (b *Bot) askQuestion(ctx context.Context, maxUserID int64, userID, initiativeID, text string) {
+func (b *Bot) askQuestion(ctx context.Context, maxUserID int64, userID string, d dialog, text string) {
+	initiativeID := d.ref
 	// Membership is checked again: the link could be revoked while the user was typing.
 	initiative, err := b.Initiatives.Polling(ctx, initiativeID)
 	if err == nil {
@@ -216,11 +246,13 @@ func (b *Bot) askQuestion(ctx context.Context, maxUserID int64, userID, initiati
 
 	switch {
 	case err == nil:
-		b.sendHTML(ctx, maxUserID, "Вопрос отправлен инициатору. Ответ придёт сюда.", nil)
+		b.done(ctx, maxUserID, d, fmt.Sprintf("✅ Вопрос отправлен инициатору:\n<blockquote>%s</blockquote>\n"+
+			"Ответ придёт сюда.", esc(strings.TrimSpace(text))))
 	case errors.Is(err, initiatives.ErrTextTooLong):
-		b.dialogs.set(maxUserID, dialogQuestion, initiativeID, b.now())
-		b.sendHTML(ctx, maxUserID, fmt.Sprintf("Вопрос длиннее %d символов. Сократите его и отправьте ещё раз.",
-			initiatives.MaxQuestionLen), cancelKeyboard())
+		b.prompt(ctx, maxUserID, dialogQuestion, initiativeID, fmt.Sprintf(
+			"Вопрос длиннее %d символов. Сократите его и отправьте ещё раз.", initiatives.MaxQuestionLen))
+	case errors.Is(err, initiatives.ErrOwnInitiative):
+		b.sendHTML(ctx, maxUserID, "Это ваша инициатива: вопросы задают соседи, а вы отвечаете на них здесь.", nil)
 	case errors.Is(err, initiatives.ErrTooManyQuestions):
 		b.sendHTML(ctx, maxUserID, fmt.Sprintf("По этой инициативе можно задать не больше %d вопросов в сутки. "+
 			"Попробуйте завтра.", initiatives.MaxQuestionsPerDay), nil)
@@ -234,15 +266,16 @@ func (b *Bot) askQuestion(ctx context.Context, maxUserID int64, userID, initiati
 	}
 }
 
-func (b *Bot) answerQuestion(ctx context.Context, maxUserID int64, userID, questionID, text string) {
+func (b *Bot) answerQuestion(ctx context.Context, maxUserID int64, userID string, d dialog, text string) {
+	questionID := d.ref
 	_, err := b.Questions.AnswerQuestion(ctx, questionID, userID, text)
 	switch {
 	case err == nil:
-		b.sendHTML(ctx, maxUserID, "Ответ отправлен.", nil)
+		b.done(ctx, maxUserID, d, fmt.Sprintf("✅ Ответ отправлен соседу:\n<blockquote>%s</blockquote>",
+			esc(strings.TrimSpace(text))))
 	case errors.Is(err, initiatives.ErrTextTooLong):
-		b.dialogs.set(maxUserID, dialogAnswer, questionID, b.now())
-		b.sendHTML(ctx, maxUserID, fmt.Sprintf("Ответ длиннее %d символов. Сократите его и отправьте ещё раз.",
-			initiatives.MaxAnswerLen), cancelKeyboard())
+		b.prompt(ctx, maxUserID, dialogAnswer, questionID, fmt.Sprintf(
+			"Ответ длиннее %d символов. Сократите его и отправьте ещё раз.", initiatives.MaxAnswerLen))
 	case errors.Is(err, initiatives.ErrQuestionAnswered):
 		b.sendHTML(ctx, maxUserID, "На этот вопрос вы уже ответили.", nil)
 	case errors.Is(err, initiatives.ErrNotInitiator):
@@ -292,8 +325,8 @@ func (r *QuestionRelay) HandleAsked(ctx context.Context, payload json.RawMessage
 		return fmt.Errorf("question house: %w", err)
 	}
 
-	text := fmt.Sprintf("<b>Вопрос по вашей инициативе «%s»</b>\n\n<blockquote>%s</blockquote>\n\n"+
-		"Имя соседа не показываем. Ответьте кнопкой ниже — ответ получит только он.",
+	text := fmt.Sprintf("<b>Сосед спрашивает про вашу инициативу «%s»</b>\n\n<blockquote>%s</blockquote>\n\n"+
+		"Ответьте кнопкой ниже — ответ получит только тот, кто спросил. Кто это, мы не показываем.",
 		esc(initiative.Title), esc(q.Text))
 	kb := model.NewKeyboard()
 	kb.AddRow().AddButton(model.Button{Type: model.ButtonCallback, Text: "Ответить", Payload: answerPayloadPrefix + ":" + q.ID})
@@ -317,8 +350,8 @@ func (r *QuestionRelay) HandleAnswered(ctx context.Context, payload json.RawMess
 		return fmt.Errorf("answer house: %w", err)
 	}
 
-	text := fmt.Sprintf("<b>Ответ на ваш вопрос по инициативе «%s»</b>\n\n<i>Вы спросили:</i>\n<blockquote>%s</blockquote>\n\n"+
-		"<i>Ответ инициатора:</i>\n<blockquote>%s</blockquote>", esc(initiative.Title), esc(q.Text), esc(q.Answer))
+	text := fmt.Sprintf("<b>Инициатор ответил на ваш вопрос про «%s»</b>\n\n<i>Ваш вопрос:</i>\n<blockquote>%s</blockquote>\n\n"+
+		"<i>Ответ:</i>\n<blockquote>%s</blockquote>", esc(initiative.Title), esc(q.Text), esc(q.Answer))
 
 	return r.send(ctx, to, text, openAppButton(r.Me, "Открыть приложение", house.InviteSlug))
 }
