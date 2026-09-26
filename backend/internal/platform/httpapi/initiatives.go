@@ -336,7 +336,7 @@ func (h *handlers) initiativeCard(c *gin.Context) {
 		return
 	}
 
-	card := toCardJSON(in, id.UserID, in.Actions(initiatives.Viewer{UserID: id.UserID, Owner: owner}))
+	card := toCardJSON(in, id.UserID, in.Actions(initiatives.Viewer{UserID: id.UserID, Owner: owner}, time.Now()))
 	if voted {
 		card.MyVote = &myVoteCardJSON{
 			Choice:        vote.Choice,

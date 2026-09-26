@@ -516,6 +516,14 @@ func TestInitiativeCard(t *testing.T) {
 		t.Fatalf("no vote is null: %s", rec.Body)
 	}
 
+	// Решение 77: after the term the owner no longer votes, the reason says why.
+	ended := poll1
+	ended.PollEndsAt = ptrTime(time.Now().Add(-time.Minute))
+	_, c = card(stage1{checks: fakeAccessChecks{owner: true, member: true}, inits: &fakeInitiativesAPI{details: ended}})
+	if ok, reason := c.action("cast_poll_vote"); ok || reason != "poll_finished" {
+		t.Fatalf("after the term: cast_poll_vote = %v %q", ok, reason)
+	}
+
 	// Not a member of the house: 403.
 	if rec, _ := card(stage1{checks: fakeAccessChecks{}, inits: &fakeInitiativesAPI{details: poll1}}); rec.Code != http.StatusForbidden {
 		t.Fatalf("not member: status = %d", rec.Code)

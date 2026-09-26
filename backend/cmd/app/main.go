@@ -131,13 +131,18 @@ func run() error {
 	if cfg.BotToken != "" {
 		wg.Go(func() {
 			runBot(ctx, cfg.BotToken, botDeps{
-				houses:      houses,
-				houseByID:   houses,
-				users:       users,
-				votes:       polls,
-				initiatives: initService,
-				notifier:    notifier,
-				devMode:     cfg.DevMode,
+				houses:           houses,
+				houseByID:        houses,
+				users:            users,
+				votes:            polls,
+				progress:         polls,
+				initiatives:      initService,
+				initiativeReader: initService,
+				questions:        initService,
+				members:          users,
+				accounts:         users,
+				notifier:         notifier,
+				devMode:          cfg.DevMode,
 			}, log)
 		})
 	}
@@ -176,15 +181,21 @@ func run() error {
 	return err
 }
 
-// botDeps bundles the domain modules the bot and the worker talk to.
+// botDeps bundles the domain modules the bot and the worker talk to. The ones the
+// end-to-end test does not need may be nil: their features then stay off.
 type botDeps struct {
-	houses      bot.Houses
-	houseByID   bot.HouseReader
-	users       bot.Users
-	votes       bot.Votes
-	initiatives bot.PollingReader
-	notifier    botNotifier
-	devMode     bool
+	houses           bot.Houses
+	houseByID        bot.HouseReader
+	users            bot.Users
+	votes            bot.Votes
+	progress         bot.PollProgress
+	initiatives      bot.PollingReader
+	initiativeReader bot.InitiativeReader
+	questions        bot.Questions
+	members          bot.Members
+	accounts         bot.Accounts
+	notifier         botNotifier
+	devMode          bool
 }
 
 // botNotifier is everything the bot runtime needs from the notify module:
@@ -234,15 +245,37 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 		Messages:    api.Messages,
 		Initiatives: deps.initiatives,
 		Houses:      deps.houseByID,
+		Progress:    deps.progress,
+		Me:          identity,
+	}
+	result := &bot.PollResult{
+		Messages:    api.Messages,
+		Initiatives: deps.initiativeReader,
+		Houses:      deps.houseByID,
+		Progress:    deps.progress,
+		Accounts:    deps.accounts,
+		Me:          identity,
+	}
+	relay := &bot.QuestionRelay{
+		Messages:    api.Messages,
+		Questions:   deps.questions,
+		Initiatives: deps.initiativeReader,
+		Houses:      deps.houseByID,
+		Accounts:    deps.accounts,
 		Me:          identity,
 	}
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
 		worker := &notify.Worker{
-			Queue:    deps.notifier,
-			Handlers: map[string]notify.JobHandler{notify.TypePollInvite: inviter.HandleJob},
-			Log:      log,
+			Queue: deps.notifier,
+			Handlers: map[string]notify.JobHandler{
+				notify.TypePollInvite:       inviter.HandleJob,
+				notify.TypePollFinished:     result.HandleJob,
+				notify.TypeQuestionAsked:    relay.HandleAsked,
+				notify.TypeQuestionAnswered: relay.HandleAnswered,
+			},
+			Log: log,
 		}
 		worker.Run(ctx)
 	})
@@ -251,16 +284,20 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 	poller := &maxbot.Poller{
 		Updates: api.Subscriptions,
 		Handler: &bot.Bot{
-			Messages:    api.Messages,
-			Houses:      deps.houses,
-			Me:          identity,
-			Log:         log,
-			Users:       deps.users,
-			Votes:       deps.votes,
-			Answers:     api.Messages,
-			Initiatives: deps.initiatives,
-			HousesByID:  deps.houseByID,
-			DevMode:     deps.devMode,
+			Messages:         api.Messages,
+			Houses:           deps.houses,
+			Me:               identity,
+			Log:              log,
+			Users:            deps.users,
+			Votes:            deps.votes,
+			Answers:          api.Messages,
+			Initiatives:      deps.initiatives,
+			HousesByID:       deps.houseByID,
+			Progress:         deps.progress,
+			Questions:        deps.questions,
+			Members:          deps.members,
+			InitiativeReader: deps.initiativeReader,
+			DevMode:          deps.devMode,
 		},
 		Log:     log,
 		BotID:   me.UserID,

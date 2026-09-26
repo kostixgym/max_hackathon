@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -15,12 +16,16 @@ import (
 
 type sentMessage struct {
 	body model.NewMessageBody
+	to   int64 // the MAX user id, when the message is addressed to a user
 }
 
 type fakeMessages struct{ sent []sentMessage }
 
 func (f *fakeMessages) Send(_ context.Context, msg *maxapi.Message) (model.SendMessageResult, error) {
-	f.sent = append(f.sent, sentMessage{body: msg.MessageBody()})
+	// The client keeps the addressee in an unexported field; reading it is the only way
+	// to check who gets a relayed question or answer.
+	to := reflect.ValueOf(msg).Elem().FieldByName("userID").Int()
+	f.sent = append(f.sent, sentMessage{body: msg.MessageBody(), to: to})
 
 	return model.SendMessageResult{}, nil
 }

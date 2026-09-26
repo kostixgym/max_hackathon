@@ -38,11 +38,28 @@ type Answers interface {
 // votePayloadPrefix marks the payloads of poll voting buttons: pv:<initiative>:<choice>.
 const votePayloadPrefix = "pv"
 
-// callback handles a button press on a poll message.
+// callback handles a button press: a vote or «Есть вопрос» on a poll message,
+// «Ответить» on a relayed question, «Отмена» on a prompt.
 func (b *Bot) callback(ctx context.Context, u model.Update) {
 	cb := u.Callback
 	if cb == nil || cb.User.UserID <= 0 {
 		// Without the presser there is nobody to count the vote for.
+		return
+	}
+	if b.Users == nil || b.Answers == nil {
+		b.Log.Warn("bot: callback came with deps not wired", "payload", cb.Payload)
+
+		return
+	}
+
+	switch payload := cb.Payload; {
+	case payload == cancelPayload:
+		b.cancelDialog(ctx, cb)
+
+		return
+	case strings.HasPrefix(payload, answerPayloadPrefix+":"):
+		b.startAnswer(ctx, cb, strings.TrimPrefix(payload, answerPayloadPrefix+":"))
+
 		return
 	}
 
@@ -51,16 +68,13 @@ func (b *Bot) callback(ctx context.Context, u model.Update) {
 		// Not ours (future button kinds); silently ignore.
 		return
 	}
-
-	if b.Users == nil || b.Votes == nil || b.Answers == nil {
-		b.Log.Warn("bot: callback came with poll deps not wired", "payload", cb.Payload)
+	if action == "question" {
+		b.startQuestion(ctx, cb, initiativeID)
 
 		return
 	}
-
-	if action == "question" {
-		b.answer(ctx, cb.CallbackID, "Вопросы можно задать на экране инициативы в приложении")
-		// The mini-app FAQ (InitiativeQuestion) arrives with the initiative screen.
+	if b.Votes == nil {
+		b.Log.Warn("bot: vote came with the poll module not wired")
 
 		return
 	}
@@ -73,7 +87,7 @@ func (b *Bot) callback(ctx context.Context, u model.Update) {
 	user, err := b.Users.EnsureUser(ctx, cb.User.UserID)
 	if err != nil {
 		b.Log.Error("bot: ensure user for vote", "err", err)
-		b.answer(ctx, cb.CallbackID, "Не получилось учесть голос, попробуйте ещё раз")
+		b.notice(ctx, cb, "Не получилось учесть голос, попробуйте ещё раз")
 
 		return
 	}
@@ -85,14 +99,14 @@ func (b *Bot) callback(ctx context.Context, u model.Update) {
 	})
 	switch {
 	case errors.Is(err, poll.ErrNotOwner):
-		b.answer(ctx, cb.CallbackID, "Голосуют только подтверждённые собственники. Откройте приложение и подтвердите квартиру")
+		b.notice(ctx, cb, "Голосуют только подтверждённые собственники. Откройте приложение и подтвердите квартиру")
 	case errors.Is(err, poll.ErrPollClosed):
 		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, nil, "Опрос завершён")
 	case errors.Is(err, poll.ErrNoWeight):
-		b.answer(ctx, cb.CallbackID, "Вашей записи нет в версии реестра этого опроса. Откройте приложение и отправьте «Данные неверны»")
+		b.notice(ctx, cb, "Вашей записи нет в версии реестра этого опроса. Откройте приложение и отправьте «Данные неверны»")
 	case err != nil:
 		b.Log.Error("bot: cast vote", "err", err, "initiative", initiativeID)
-		b.answer(ctx, cb.CallbackID, "Не получилось учесть голос, попробуйте ещё раз")
+		b.notice(ctx, cb, "Не получилось учесть голос, попробуйте ещё раз")
 	default:
 		b.answerWithMessage(ctx, cb.CallbackID, initiativeID, &result, voteAcceptedText(result))
 	}
@@ -133,26 +147,22 @@ func (b *Bot) pollMessageBody(ctx context.Context, initiativeID string, vote *po
 		return model.NewMessageBody{}, false
 	}
 
-	text, kb := pollMessage(b.Me, initiative, house, vote)
+	view := pollView{initiative: initiative, house: house, vote: vote, now: b.now()}
+	if b.Progress != nil {
+		// Without the support line the message still shows the vote.
+		if progress, err := b.Progress.Progress(ctx, initiativeID); err == nil {
+			view.progress = &progress
+		}
+	}
+	text, kb := view.render(b.Me)
 
-	return maxapi.NewMessage().SetText(text).AddKeyboard(kb).MessageBody(), true
+	return maxapi.NewMessage().SetText(text).SetFormat(model.FormatHTML).AddKeyboard(kb).MessageBody(), true
 }
 
 func (b *Bot) sendAnswer(ctx context.Context, callbackID string, answer model.CallbackAnswer) {
 	if _, err := b.Answers.AnswerOnCallback(ctx, callbackID, answer); err != nil {
 		b.Log.Error("bot: answer on callback", "err", err, "callback_id", callbackID)
 	}
-}
-
-// voteSummary: «за», 26,15 м² (кв. 45).
-func voteSummary(result poll.CastResult) string {
-	weight := new(big.Rat).SetFrac64(result.WeightNum, result.WeightDen*100) // сотые м² → м²
-	word := "«за»"
-	if result.Choice == poll.ChoiceAgainst {
-		word = "«против»"
-	}
-
-	return fmt.Sprintf("%s, %s м² (кв. %s)", word, registry.FormatM2(weight), result.PremiseNumber)
 }
 
 func voteAcceptedText(result poll.CastResult) string {

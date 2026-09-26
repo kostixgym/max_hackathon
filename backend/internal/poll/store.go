@@ -122,7 +122,8 @@ func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) 
 	if err != nil {
 		return CastResult{}, err
 	}
-	if initiative.Stage != "poll" {
+	// The poll takes votes on its stage and until its term (решения 3, 77).
+	if !initiative.Open(time.Now()) {
 		return CastResult{}, fmt.Errorf("%w: stage %s", ErrPollClosed, initiative.Stage)
 	}
 

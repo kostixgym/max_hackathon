@@ -3,13 +3,20 @@ package initiatives
 import (
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestActions(t *testing.T) {
 	initiator := "user-initiator"
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	later, earlier := now.Add(time.Hour), now.Add(-time.Second)
 	in := func(stage string) Initiative {
-		return Initiative{Stage: stage, InitiatorUserID: &initiator}
+		return Initiative{Stage: stage, InitiatorUserID: &initiator, PollEndsAt: &later}
 	}
+	ended := in(StagePoll)
+	ended.PollEndsAt = &earlier
+	endsNow := in(StagePoll)
+	endsNow.PollEndsAt = &now
 	lead := Viewer{UserID: initiator, Owner: true}
 	neighbour := Viewer{UserID: "user-neighbour", Owner: true}
 	resident := Viewer{UserID: "user-resident", Owner: false}
@@ -28,12 +35,16 @@ func TestActions(t *testing.T) {
 		{"neighbour owner, poll", in(StagePoll), neighbour, ReasonNotInitiator, ""},
 		{"resident, poll", in(StagePoll), resident, ReasonNotInitiator, ReasonOwnerVerificationRequired},
 		{"resident, demand", in(StageDemand), resident, ReasonNotInitiator, ReasonWrongStage},
+		// Решение 77: the poll takes votes until its term, the term itself is already closed.
+		{"owner, term is over", ended, neighbour, ReasonNotInitiator, ReasonPollFinished},
+		{"owner, term is now", endsNow, neighbour, ReasonNotInitiator, ReasonPollFinished},
+		{"resident, term is over", ended, resident, ReasonNotInitiator, ReasonPollFinished},
 		// An initiative whose initiator deleted the account (решение 28) has no initiator.
 		{"no initiator", Initiative{Stage: StageDraft}, lead, ReasonNotInitiator, ReasonWrongStage},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			actions := c.initiative.Actions(c.viewer)
+			actions := c.initiative.Actions(c.viewer, now)
 
 			codes := make([]string, 0, len(actions))
 			for _, a := range actions {
@@ -67,6 +78,28 @@ func TestActions(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// One rule of an open poll for the card, the poll module and the bot.
+func TestPollingOpen(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	later, earlier := now.Add(time.Minute), now.Add(-time.Minute)
+	cases := []struct {
+		p    Polling
+		open bool
+	}{
+		{Polling{Stage: StagePoll, PollEndsAt: &later}, true},
+		{Polling{Stage: StagePoll}, true}, // no term: open until the path is chosen
+		{Polling{Stage: StagePoll, PollEndsAt: &now}, false},
+		{Polling{Stage: StagePoll, PollEndsAt: &earlier}, false},
+		{Polling{Stage: StageDraft, PollEndsAt: &later}, false},
+		{Polling{Stage: StageDemand, PollEndsAt: &later}, false},
+	}
+	for _, c := range cases {
+		if got := c.p.Open(now); got != c.open {
+			t.Errorf("%+v: open = %v, want %v", c.p, got, c.open)
+		}
 	}
 }
 

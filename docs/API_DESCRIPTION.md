@@ -563,13 +563,14 @@
 
 Сейчас работают два правила:
 - `start_poll` — инициатор, черновик. Иначе `not_initiator`, `poll_already_started` или `wrong_stage` (инициатива отменена);
-- `cast_poll_vote` — идёт опрос, пользователь — подтверждённый собственник. Иначе `wrong_stage` или
-  `owner_verification_required`.
+- `cast_poll_vote` — идёт опрос, срок не вышел, пользователь — подтверждённый собственник. Иначе `wrong_stage`,
+  `poll_finished` (срок вышел, решение 77) или `owner_verification_required`.
 
 Остальные действия пока приходят с причиной `not_implemented`: их ручки появятся в шагах 1.4–1.6, и кнопка включится
 без изменений на фронтенде. Такую кнопку фронтенд прячет или показывает неактивной с подписью «скоро».
 
-Коды причин: `owner_verification_required`, `not_initiator`, `wrong_stage`, `poll_already_started`, `not_implemented`.
+Коды причин: `owner_verification_required`, `not_initiator`, `wrong_stage`, `poll_already_started`, `poll_finished`,
+`not_implemented`.
 Зарезервированы для следующих шагов: `poll_not_finished`, `support_not_reached`, `path_not_selected`,
 `active_meeting_exists`.
 
@@ -586,6 +587,7 @@
 - Приглашения с кнопками голосования приходят в чат с ботом.
 - В тихие часы (22:00–9:00 по часовому поясу дома) рассылка ждёт утра.
 - В демо-доме приглашение уходит только инициатору.
+- По окончании срока голоса больше не принимаются, а инициатор получает итог в чат (решение 77).
 
 **Request body:**
 
@@ -635,7 +637,7 @@
 - `400 invalid_request`;
 - `403 not_owner`;
 - `404 initiative_not_found`;
-- `409 poll_closed`;
+- `409 poll_closed` — опрос завершён: вышел срок или инициатива ушла дальше;
 - `409 not_in_snapshot` — записи собственника нет в версии реестра инициативы.
 
 ### `GET /api/v1/initiatives/{id}/poll`

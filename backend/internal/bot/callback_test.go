@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
 
@@ -76,15 +77,19 @@ func callbackUpdate(callbackID, payload string, maxUserID int64) model.Update {
 	}
 }
 
+// testNow is before the term of fakePolling (3 October, 18:00 in Moscow).
+var testNow = time.Date(2026, time.October, 1, 12, 0, 0, 0, time.UTC)
+
 func newVoteBot(votes *fakeVotes) *Bot {
 	return &Bot{
-		Messages: nil,
+		Messages: &fakeMessages{},
 		Houses:   nil,
 		Me:       Identity{UserID: 555, Username: "dom_test_bot"},
 		Log:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Users:    &fakeUsers{},
 		Votes:    votes,
 		Answers:  &fakeAnswers{},
+		Now:      func() time.Time { return testNow },
 	}
 }
 
@@ -120,8 +125,9 @@ func TestCallbackQuestionDoesNotVote(t *testing.T) {
 	if len(votes.cast) != 0 {
 		t.Fatalf("question pressed: votes = %+v, want none", votes.cast)
 	}
-	if len(answers.texts) != 1 {
-		t.Fatalf("answers = %q", answers.texts)
+	// Without the questions module the press is still answered, and visibly.
+	if len(answers.texts) != 1 || len(b.Messages.(*fakeMessages).sent) != 1 {
+		t.Fatalf("answers = %q, messages = %d", answers.texts, len(b.Messages.(*fakeMessages).sent))
 	}
 }
 
@@ -147,6 +153,19 @@ func TestCallbackVoteErrors(t *testing.T) {
 				t.Fatalf("answer = %q, want it to contain %q", answers.texts, tc.want)
 			}
 		})
+	}
+}
+
+// MAX does not show the notification of a callback answer (проверка 0.6): a refused
+// vote must also come as a message, or the press looks dead.
+func TestCallbackVoteErrorIsVisible(t *testing.T) {
+	b := newVoteBot(&fakeVotes{err: poll.ErrNotOwner})
+
+	b.Handle(context.Background(), callbackUpdate("cb-e", "pv:"+testInitiative+":for", 42))
+
+	sent := b.Messages.(*fakeMessages).sent
+	if len(sent) != 1 || !strings.Contains(sent[0].body.Text, "подтверждённые собственники") {
+		t.Fatalf("messages = %+v, want the refusal as a message", sent)
 	}
 }
 
@@ -192,11 +211,16 @@ func TestCallbackUpdatesPollMessage(t *testing.T) {
 	b.Handle(context.Background(), callbackUpdate("cb-1", "pv:"+testInitiative+":for", 42))
 
 	msg := answers.messages[0]
-	if msg == nil || !strings.Contains(msg.Text, "Ваш голос: «за», 26,15 м² (кв. 45)") {
-		t.Fatalf("updated message = %+v, want the current choice", msg)
+	if msg == nil || msg.Format != model.FormatHTML || !strings.Contains(msg.Text, "<mark>Ваш голос: «за», 26,15 м² (кв. 45)</mark>") {
+		t.Fatalf("updated message = %+v, want the current choice highlighted", msg)
 	}
-	if buttons := msg.Attachments[0].Payload.Buttons; len(buttons) != 3 || buttons[0][0].Type != model.ButtonCallback {
+	buttons := msg.Attachments[0].Payload.Buttons
+	if len(buttons) != 3 || buttons[0][0].Type != model.ButtonCallback {
 		t.Fatalf("the voting buttons must stay while the poll is on: %+v", buttons)
+	}
+	// The chosen option is marked on its button.
+	if buttons[0][0].Text != "✅ Поддерживаю" || buttons[0][1].Text != "Против" {
+		t.Fatalf("vote buttons = %q, %q", buttons[0][0].Text, buttons[0][1].Text)
 	}
 }
 
@@ -212,8 +236,27 @@ func TestCallbackClosedPollRemovesButtons(t *testing.T) {
 	if msg == nil || !strings.Contains(msg.Text, "Опрос завершён") {
 		t.Fatalf("updated message = %+v, want «Опрос завершён»", msg)
 	}
+	// The voting buttons are gone; a question can still be asked while the initiative goes on.
 	buttons := msg.Attachments[0].Payload.Buttons
-	if len(buttons) != 1 || buttons[0][0].Type != model.ButtonOpenApp {
-		t.Fatalf("only the app button must stay after the poll: %+v", buttons)
+	if len(buttons) != 2 || buttons[0][0].Payload != "pv:"+testInitiative+":question" || buttons[1][0].Type != model.ButtonOpenApp {
+		t.Fatalf("after the poll: %+v, want «Есть вопрос» and the app button", buttons)
+	}
+}
+
+// The term closes the poll even before the initiator moves on (решение 77).
+func TestCallbackAfterTermRemovesVoteButtons(t *testing.T) {
+	b := newVoteBot(&fakeVotes{err: poll.ErrPollClosed})
+	answers := &fakeAnswers{}
+	b.Answers, b.Initiatives, b.HousesByID = answers, fakePolling{stage: "poll"}, fakeHouseReader{}
+	b.Now = func() time.Time { return time.Date(2026, time.October, 3, 15, 0, 0, 0, time.UTC) } // the term itself
+
+	b.Handle(context.Background(), callbackUpdate("cb-1", "pv:"+testInitiative+":for", 42))
+
+	msg := answers.messages[0]
+	if msg == nil || !strings.Contains(msg.Text, "Опрос завершён") || strings.Contains(msg.Text, "Опрос идёт до") {
+		t.Fatalf("updated message = %+v, want the closed poll", msg)
+	}
+	if buttons := msg.Attachments[0].Payload.Buttons; len(buttons) != 2 {
+		t.Fatalf("after the term: %+v, want no voting buttons", buttons)
 	}
 }

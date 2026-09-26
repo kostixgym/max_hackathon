@@ -1,6 +1,6 @@
-// Package bot handles chat updates: greets the user and opens the mini-app.
-// The chat is for notifications and short actions; complex screens live in the
-// mini-app (docs/02). Voting buttons and reminders come in stage 1.
+// Package bot handles chat updates: greets the user and opens the mini-app, takes
+// poll votes and questions to the initiator. The chat is for notifications and short
+// actions; complex screens live in the mini-app (docs/02).
 //
 // The bot talks only in private dialogs (decision 44). In a group chat of the house
 // it stays silent, otherwise it would answer every message of the neighbours.
@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strings"
+	"time"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
@@ -50,11 +52,35 @@ type Bot struct {
 	// the voter's current choice (решение 68). Without them only a notification is shown.
 	Initiatives PollingReader
 	HousesByID  HouseReader
+	// Progress adds the support in м² to the poll message; optional.
+	Progress PollProgress
+
+	// Questions to the initiator (решение 78). Without them «Есть вопрос» only says
+	// that questions are not available.
+	Questions        Questions
+	Members          Members
+	InitiativeReader InitiativeReader
 
 	// DevMode enables /id: it tells the user their MAX id, which the API of the
 	// development mode accepts in X-Dev-User-Id. Until the mini-app is ready this is
 	// the only way to act in the API as a real MAX account. The id is not logged.
 	DevMode bool
+
+	// Now is the clock of the bot; nil means time.Now.
+	Now func() time.Time
+
+	dialogs dialogs
+}
+
+func (b *Bot) now() time.Time { return clock(b.Now) }
+
+// clock reads a replaceable clock: nil means time.Now.
+func clock(now func() time.Time) time.Time {
+	if now != nil {
+		return now()
+	}
+
+	return time.Now()
 }
 
 // openAppPayload is what MAX accepts in the payload of an open_app button;
@@ -75,6 +101,12 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 			return
 		}
 		cmd := u.GetCommand()
+		if strings.HasPrefix(msg.Body.Text, "/") {
+			// A command ends a pending question or answer: it is not the awaited text.
+			b.dialogs.clear(u.UserID)
+		} else if b.dialogText(ctx, u) {
+			return
+		}
 		switch {
 		case cmd.Command == "/start":
 			b.start(ctx, u, cmd.RemainingText)
@@ -117,6 +149,21 @@ func (b *Bot) send(ctx context.Context, u model.Update, text string, kb *model.K
 	if _, err := b.Messages.Send(ctx, msg); err != nil {
 		b.Log.Error("bot: send message", "err", err, "type", u.UpdateType)
 	}
+}
+
+// sendHTML writes to the user by MAX id; the text is HTML, parts from users escaped.
+func (b *Bot) sendHTML(ctx context.Context, maxUserID int64, text string, kb *model.Keyboard) {
+	msg := maxapi.NewMessage().SetUser(maxUserID).SetText(text).SetFormat(model.FormatHTML).AddKeyboard(kb)
+	if _, err := b.Messages.Send(ctx, msg); err != nil {
+		b.Log.Error("bot: send message", "err", err)
+	}
+}
+
+// notice answers a press with a text the user must see. MAX does not show the
+// notification of a callback answer (проверка 0.6), so the text also goes as a message.
+func (b *Bot) notice(ctx context.Context, cb *model.Callback, text string) {
+	b.answer(ctx, cb.CallbackID, text)
+	b.sendHTML(ctx, cb.User.UserID, esc(text), nil)
 }
 
 // openAppButton is a keyboard with the single button that opens the mini-app.

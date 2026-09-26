@@ -216,8 +216,8 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 }
 
 // StartPoll moves the draft to the poll stage and enqueues one invitation job per
-// verified owner of the house — in one transaction, so an accepted request always
-// results in mailings (docs/02, шаг 2).
+// verified owner of the house and the result job for the end of the term — in one
+// transaction, so an accepted request always results in mailings (docs/02, шаг 2).
 func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, pollEndsAt time.Time) (Initiative, error) {
 	current, err := s.Get(ctx, initiativeID)
 	if err != nil {
@@ -269,7 +269,7 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 			return fmt.Errorf("%w: draft", ErrWrongStage)
 		}
 
-		jobs := make([]notify.Job, 0, len(recipients))
+		jobs := make([]notify.Job, 0, len(recipients)+1)
 		for _, r := range recipients {
 			jobs = append(jobs, notify.Job{
 				Type:     notify.TypePollInvite,
@@ -281,6 +281,19 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 				RunAt: runAt,
 			})
 		}
+
+		// The poll closes by its term, and the initiator gets the result with the next
+		// step (решения 18, 77). A term at night is reported in the morning.
+		finishAt := pollEndsAt
+		if until, quiet := notify.QuietHoursEnd(pollEndsAt, house.Location()); quiet {
+			finishAt = until
+		}
+		jobs = append(jobs, notify.Job{
+			Type:     notify.TypePollFinished,
+			DedupKey: fmt.Sprintf("%s:%s", notify.TypePollFinished, initiativeID),
+			Payload:  map[string]any{"initiative_id": initiativeID},
+			RunAt:    finishAt,
+		})
 
 		return s.queue.EnqueueTx(ctx, tx, jobs...)
 	})
