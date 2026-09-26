@@ -26,7 +26,7 @@ var ErrNotFound = errors.New("not found")
 // ErrForbidden means that the user may not view the requested owner directory.
 var ErrForbidden = errors.New("forbidden")
 
-// Registry reads houses, premises and owners (the registry module).
+// Registry reads houses, premises, owners and organizations (the registry module).
 type Registry interface {
 	House(ctx context.Context, id string) (registry.HouseRef, error)
 	Premises(ctx context.Context, ids []string) ([]registry.Premise, error)
@@ -34,6 +34,7 @@ type Registry interface {
 	PremiseOwners(ctx context.Context, premiseID string) ([]registry.Owner, error)
 	HouseOwners(ctx context.Context, houseID string) ([]registry.Owner, error)
 	Owners(ctx context.Context, ids []string) ([]registry.Owner, error)
+	OrgsByIDs(ctx context.Context, ids []string) ([]registry.Org, error)
 }
 
 // Initiatives answers questions about initiatives (the initiatives module).

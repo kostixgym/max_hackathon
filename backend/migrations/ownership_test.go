@@ -20,8 +20,9 @@ var tableOwners = map[string][]string{
 	"rules":       {"decision_types", "templates", "template_items"},
 	"initiatives": {"initiatives", "agenda_items", "initiative_questions"},
 	"poll":        {"poll_votes"},
+	"demand":      {"demands"},
 	"meeting": {
-		"demands", "meetings", "ballots", "ballot_decisions", "gis_result_entries", "meeting_results",
+		"meetings", "ballots", "ballot_decisions", "gis_result_entries", "meeting_results",
 	},
 	"audit":  {"audit_logs"},
 	"notify": {"jobs", "bot_markers"},
