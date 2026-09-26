@@ -112,7 +112,8 @@ func (h *handlers) orgHousesList(c *gin.Context) {
 	writeJSON(c, http.StatusOK, gin.H{"houses": list})
 }
 
-// orgDemands waits for Дима's demand module (Д1, demand.ListByHouses).
+// orgDemands waits for Дима's demand module (Д1, demand.ListByHouses). In the demo
+// house it lists only the demands of the caller's own initiatives (решение 79).
 func (h *handlers) orgDemands(c *gin.Context) {
 	notImplemented(c, "Требования появятся вместе с модулем требования")
 }

@@ -51,10 +51,14 @@ type Deps struct {
 	Votes            Voter
 	DemoMembers      DemoMembership
 
-	// Sprint to 30.09: the staff cabinet (К2). Demands and meetings come with
-	// their modules (Дима Д1–Д3, Гоша Г2–Г6); until then the routes answer 501.
+	// Sprint to 30.09: the staff cabinet (К2), demands (Дима, Д1–Д5) and meetings
+	// (Гоша, Г2–Г7). The Demands and Meetings interfaces live in demands.go and
+	// meetings.go: their owners add methods there and the wiring in main.go, this
+	// file stays as it is. A nil module keeps its routes at 501.
 	Orgs      Orgs
 	OrgHouses OrgHouses
+	Demands   Demands
+	Meetings  Meetings
 }
 
 // maxBodyBytes limits a request body: the largest one, an initiative with its
@@ -69,7 +73,7 @@ func NewHandler(d Deps) http.Handler {
 		access: d.Access, templates: d.Templates, initiatives: d.Initiatives,
 		initiativeReader: d.InitiativeReader, pollStarter: d.PollStarter,
 		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers,
-		orgs: d.Orgs, orgHouses: d.OrgHouses,
+		orgs: d.Orgs, orgHouses: d.OrgHouses, demands: d.Demands, meetings: d.Meetings,
 	}
 
 	// Application logs are emitted through slog; Gin's debug route dump would
@@ -165,9 +169,11 @@ type handlers struct {
 	votes            Voter
 	demoMembers      DemoMembership
 
-	// Sprint to 30.09: the staff cabinet.
+	// Sprint to 30.09.
 	orgs      Orgs
 	orgHouses OrgHouses
+	demands   Demands
+	meetings  Meetings
 }
 
 func (h *handlers) healthz(c *gin.Context) {

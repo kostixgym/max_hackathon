@@ -104,9 +104,15 @@
         "weight_m2": "26.15"
       }
     }
+  ],
+  "orgs": [
+    {"id": "0199...", "name": "ООО «Демо-УК»", "type": "uk", "role": "operator"}
   ]
 }
 ```
+
+`orgs` — организации, где пользователь работает сотрудником: по ним мини-приложение показывает переключатель
+«Жилец / УК». Всегда массив, пустой у жителя.
 
 Если приложение открыто без ссылки дома, поле `house` равно `null`. При неверном или устаревшем
 `initData` возвращается `401 Unauthorized`. `memberships` всегда является массивом. Для привязки без
@@ -578,6 +584,12 @@
 - `404 initiative_not_found` — нет такой инициативы или это чужой черновик;
 - `403 not_member` — пользователь не подтверждён в доме инициативы.
 
+**Будет в Д4 (Дима):**
+- поля карточки `demand` — `{id, status, uk_due_at, overdue}` или `null`, и `meeting` — `{id, status}` или `null`;
+- правило `select_path_a`: инициатор, стадия опроса, поддержка от 10%, иначе `support_not_reached`;
+- правило `create_meeting`: сотрудник УК, который ведёт эту инициативу (решение 79), стадия `demand`, нет активного
+  собрания, иначе `staff_only` или `active_meeting_exists`.
+
 ### `POST /api/v1/initiatives/{id}/start-poll`
 
 Запускает предварительный опрос и создаёт задачи рассылки подтверждённым собственникам.
@@ -653,12 +665,342 @@
 `{initiative_id, title, stage, for_percent, votes_for, votes_against, thresholds: {demand_m2, quorum_above_m2, two_thirds_m2}}`.
 Площади — строки с точкой и двумя знаками (`"63.50"`), пороги считаются от общей площади снимка реестра инициативы.
 
-## Ветвление после предварительного опроса
+## Путь A: требование, кабинет УК, собрание
 
-### Путь A — через УК
+Объём до 30.09 — путь A в демо-доме ([plan-do-30-09.md](plan-do-30-09.md), раздел 0). У каждой ручки отмечен статус:
+- **Реализовано**;
+- **Каркас (шаг)** — маршрут есть и до этого шага плана отвечает `501 not_implemented`;
+- **Вне объёма до 30.09** — уходит в «Известные ограничения» README (последний раздел).
 
-Путь A выбирается созданием требования через `POST /api/v1/initiatives/{id}/demand`. Он доступен
-при поддержке не менее 10%. После передачи требования УК получает 45 дней на создание собрания.
+Стадии инициативы на пути A:
+1. `poll` → `demand`: создано требование, выбран путь A;
+2. → `meeting`: УК создала собрание;
+3. → `completed`: итог зафиксирован.
+
+Переходы делает `initiatives.SetStageTx` в транзакции того, кто создаёт требование, собрание или итог.
+
+**Кто действует как УК (решение 79).** Сотрудник управляющей организации дома. В демо-доме все тестировщики —
+сотрудники одной демо-УК, поэтому там сотрудник видит в кабинете и ведёт только свои инициативы, а уведомления по
+ним получает только сам инициатор.
+
+```text
+опрос, «за» не меньше 10%
+└─ POST /initiatives/{id}/demand               → стадия demand, путь A
+   └─ POST /demands/{id}/mark-delivered        → срок УК — 45 дней
+      └─ сотрудник УК: POST /initiatives/{id}/meetings → стадия meeting, бюллетени по снимку реестра
+         ├─ POST /meetings/{id}/ballots/receive     — бюллетень получен
+         ├─ PUT /ballots/{id}/decisions             — решения, после окончания голосования
+         ├─ GET /meetings/{id}/result-preview
+         └─ POST /meetings/{id}/finalize            → стадия completed, итог записан один раз
+            └─ GET /meetings/{id}/protocol.pdf
+```
+
+### `POST /api/v1/initiatives/{id}/demand`
+
+**Каркас (Д1).** Выбирает путь A и создаёт требование к УК провести собрание (ст. 45 ч. 6 ЖК). Вызывает инициатор
+на стадии опроса при поддержке не меньше 10% площади.
+
+**Request body:** `{"channel": "paper"}`, где `channel` — `paper` или `gosuslugi_dom`.
+
+**Response `201 Created`:**
+
+```json
+{
+  "id": "0199...",
+  "initiative_id": "0199...",
+  "channel": "paper",
+  "status": "draft",
+  "support_m2": "1240.00",
+  "created_at": "2026-09-27T12:00:00+03:00"
+}
+```
+
+**Ошибки:**
+- `403 not_initiator`;
+- `404 initiative_not_found`;
+- `409 wrong_stage`, `409 support_not_reached`, `409 demand_exists`.
+
+### `GET /api/v1/demands/{id}`
+
+**Каркас (Д1).** Требование для экрана инициатора и для кабинета УК.
+
+**Response `200 OK`:** `{id, initiative_id, channel, status, support_m2, delivered_at, uk_due_at, overdue}`.
+`status` — `draft` или `delivered`. `overdue` считается при чтении: срок `uk_due_at` прошёл, а собрания нет.
+
+**Ошибки:** `403 forbidden` — не инициатор и не сотрудник УК, который ведёт инициативу; `404 demand_not_found`.
+
+### `POST /api/v1/demands/{id}/mark-delivered`
+
+**Каркас (Д1).** Инициатор отмечает, что требование передано в УК. С этого момента идёт срок 45 дней.
+
+**Request body:** `{"delivered_at": "2026-10-03T12:00:00+03:00"}` — поле необязательно, по умолчанию сейчас.
+
+**Response `200 OK`:** как `GET /demands/{id}`, с `status: "delivered"` и `uk_due_at` = `delivered_at` + 45 дней.
+
+**Ошибки:** `403 not_initiator`, `409 already_delivered`.
+
+### `GET /api/v1/demands/{id}/pdf`
+
+**Каркас (Д3).** PDF требования: адресат (УК), дом, повестка, поддержка в м² против порога 10%, таблица подписей без
+ФИО (решение 20). Доступ — у инициатора и у сотрудника УК, который ведёт инициативу. Ответ — `application/pdf`.
+
+## Кабинет УК
+
+### `POST /api/v1/houses/{slug}/demo-staff`
+
+**Реализовано.** Делает пользователя сотрудником (`operator`) демо-УК. Работает только в демо-доме, повторный вызов
+ничего не меняет. `{slug}` — пригласительная ссылка дома.
+
+**Request body:** отсутствует.
+
+**Response `200 OK`:** `{"org": {"id": "0199...", "name": "ООО «Демо-УК»", "type": "uk"}, "role": "operator"}`.
+
+**Ошибки:** `403 not_demo`, `404 house_not_found`, `409 no_org`.
+
+### `GET /api/v1/orgs`
+
+**Реализовано.** Организации, где пользователь работает сотрудником. Те же данные приходят в `GET /me` полем `orgs`.
+
+**Response `200 OK`:** `{"orgs": [{"id": "0199...", "name": "ООО «Демо-УК»", "type": "uk", "role": "operator"}]}`.
+
+### `GET /api/v1/orgs/{orgID}/houses`
+
+**Реализовано.** Дома организации.
+
+**Response `200 OK`:** `{"houses": [{"id": "0199...", "address": "…", "region": "…", "is_demo": true}]}`.
+
+**Ошибки:** `403 not_staff` — чужая организация; `404 org_not_found` — неверный id.
+
+### `GET /api/v1/orgs/{orgID}/demands`
+
+**Каркас (К2 после Д1).** Входящие требования. В демо-доме — только по своим инициативам (решение 79).
+
+**Response `200 OK`:**
+
+```json
+{
+  "demands": [
+    {
+      "id": "0199...",
+      "initiative_id": "0199...",
+      "initiative_title": "Камеры в подъездах",
+      "house": {"id": "0199...", "address": "г. Казань, ул. Демонстрационная, д. 1"},
+      "status": "delivered",
+      "support_m2": "1240.00",
+      "delivered_at": "2026-10-03T12:00:00+03:00",
+      "uk_due_at": "2026-11-17T12:00:00+03:00",
+      "overdue": false,
+      "meeting_id": null
+    }
+  ]
+}
+```
+
+**Ошибки:** `403 not_staff`, `404 org_not_found`.
+
+## Собрание
+
+Собрание ведёт администратор — сотрудник УК, который ведёт инициативу (решение 79). Остальные ручки ниже доступны
+только ему, если не сказано иное.
+
+### `POST /api/v1/initiatives/{id}/meetings`
+
+**Каркас (Г2).** Сотрудник УК создаёт собрание по требованию, стадия инициативы — `demand`. В той же транзакции
+создаются бюллетени по всем собственникам снимка реестра инициативы (вес копируется), а инициатива переходит на
+стадию `meeting`.
+
+**Request body:**
+
+```json
+{
+  "form": "paper_absentee",
+  "notice_at": "2026-10-05T12:00:00+03:00",
+  "voting_starts_at": "2026-10-15T09:00:00+03:00",
+  "voting_ends_at": "2026-10-25T20:00:00+03:00",
+  "chair_owner_id": "0199...",
+  "secretary_owner_id": "0199..."
+}
+```
+
+- `form` — `gis_electronic` или `paper_absentee`.
+- Даты: в обычном доме голосование начинается не раньше чем через 10 дней после `notice_at` (ст. 45 ч. 4 ЖК). В
+  демо-доме подходят любые будущие даты.
+- Председатель и секретарь — разные собственники снимка. Кандидатов отдаёт
+  `GET /houses/{houseID}/meeting-officer-candidates`.
+
+**Response `201 Created`:** как `GET /meetings/{id}`.
+
+**Ошибки:**
+- `403 staff_only`;
+- `404 initiative_not_found`;
+- `409 wrong_stage`, `409 active_meeting_exists`;
+- `400 invalid_dates`, `400 invalid_officers`.
+
+### `GET /api/v1/meetings/{id}`
+
+**Каркас (Г3).** Сроки, статус, повестка и прогресс собрания. Видят администратор и подтверждённые жители дома.
+
+**Response `200 OK`:**
+
+```json
+{
+  "id": "0199...",
+  "initiative_id": "0199...",
+  "title": "Камеры в подъездах",
+  "house": {"id": "0199...", "address": "г. Казань, ул. Демонстрационная, д. 1"},
+  "attempt": 1,
+  "form": "paper_absentee",
+  "status": "voting",
+  "notice_at": "2026-10-05T12:00:00+03:00",
+  "voting_starts_at": "2026-10-15T09:00:00+03:00",
+  "voting_ends_at": "2026-10-25T20:00:00+03:00",
+  "chair": {"owner_id": "0199...", "masked_name": "Иванов И. И."},
+  "secretary": {"owner_id": "0199...", "masked_name": "Петрова А. В."},
+  "agenda_items": [
+    {"id": "0199...", "position": 1, "text": "Избрать председателя и секретаря…", "majority_rule": "majority_of_participants"}
+  ],
+  "progress": {
+    "ballots_total": 64,
+    "ballots_received": 12,
+    "participants_m2": "610.50",
+    "total_m2": "3000.00",
+    "quorum_above_m2": "1500.00"
+  },
+  "is_admin": true,
+  "outcome": null,
+  "finalized_at": null
+}
+```
+
+- `status` считается по датам: `preparation` → `notice` → `voting` → `counting` (голосование окончено) → `completed`.
+- `is_admin` — может ли пользователь вести собрание.
+- `outcome` после фиксации — `held` или `no_quorum`.
+
+**Ошибки:** `403 not_member`, `404 meeting_not_found`.
+
+### `GET /api/v1/meetings/{id}/tracker`
+
+**Каркас (Г3).** Трекер администратора: список бюллетеней без вариантов голоса.
+
+**Response `200 OK`:**
+
+```json
+{
+  "summary": {"ballots_total": 64, "received": 12, "counted": 0, "participants_m2": "610.50"},
+  "ballots": [
+    {
+      "id": "0199...",
+      "premise_number": "45",
+      "entrance": 3,
+      "owner_masked_name": "Иванов И. И.",
+      "weight_m2": "26.15",
+      "status": "not_voted"
+    }
+  ]
+}
+```
+
+`status` — `not_voted`, `paper_received`, `counted` или `invalid`.
+
+**Ошибки:** `403 staff_only`.
+
+### `POST /api/v1/meetings/{id}/ballots/receive`
+
+**Каркас (Г3).** Отмечает, что бумажный бюллетень из трекера получен. Отметка по QR-токену появится вместе со
+сканером и в объём до 30.09 не входит.
+
+**Request body:** `{"ballot_id": "0199..."}`.
+
+**Response `200 OK`:** `{ballot_id, status: "paper_received", received_at}`.
+
+**Ошибки:** `403 staff_only`, `404 ballot_not_found`, `409 already_received`.
+
+### `PUT /api/v1/ballots/{id}/decisions`
+
+**Каркас (Г4).** После окончания голосования вносит решения из бумажного бюллетеня по всем вопросам повестки.
+
+**Request body:**
+
+```json
+{
+  "decisions": [
+    {"agenda_item_id": "0199...", "choice": "for"}
+  ]
+}
+```
+
+`choice` — `for`, `against` или `abstain`.
+
+**Response `200 OK`:** `{ballot_id, status: "counted", decisions}`.
+
+**Ошибки:**
+- `403 staff_only`;
+- `400 invalid_request` — решения не по всем вопросам;
+- `409 voting_not_finished`, `409 already_finalized`.
+
+### `GET /api/v1/meetings/{id}/result-preview`
+
+**Каркас (Г5).** Кворум и результат каждого вопроса до фиксации.
+
+**Response `200 OK`:**
+
+```json
+{
+  "participants_m2": "2400.00",
+  "total_m2": "3000.00",
+  "quorum_reached": true,
+  "agenda_results": [
+    {
+      "agenda_item_id": "0199...",
+      "position": 2,
+      "text": "Установить видеонаблюдение…",
+      "majority_rule": "two_thirds_of_all",
+      "for_m2": "2040.00",
+      "against_m2": "300.00",
+      "abstain_m2": "60.00",
+      "accepted": true
+    }
+  ]
+}
+```
+
+**Ошибки:** `403 staff_only`.
+
+### `POST /api/v1/meetings/{id}/finalize`
+
+**Каркас (Г5).**
+- Записывает итог один раз в `meeting_results`; менять его потом запрещает триггер.
+- Собрание переходит в `completed`, инициатива — тоже.
+
+**Response `200 OK`:** `{meeting_id, outcome, finalized_at, results}`, где `outcome` — `held` или `no_quorum`, а
+`results` устроены как `agenda_results`.
+
+**Ошибки:** `403 staff_only`, `409 voting_not_finished`, `409 already_finalized`.
+
+### `GET /api/v1/meetings/{id}/protocol.pdf`
+
+**Каркас (Д5).** Черновик протокола по Приказу Минстроя № 44/пр, строится только из зафиксированного итога.
+Ответ — `application/pdf`.
+
+**Ошибки:** `403 forbidden`, `409 not_finalized`.
+
+### Демо-ускорители
+
+**Каркас (Г6).** `POST /api/v1/meetings/{id}/demo/finish-voting` и `POST /api/v1/meetings/{id}/demo/fill-ballots`.
+Работают только в демо-доме и только у администратора собрания. Без них жюри пришлось бы ждать дни и вносить
+десятки бюллетеней вручную.
+- `finish-voting` переносит окончание голосования на «сейчас»: можно вносить решения и фиксировать итог.
+- `fill-ballots` отмечает полученными и учтёнными бюллетени примерно на 80% площади, «за» — около 85% участников,
+  чтобы камеры набрали 2/3 от всех.
+
+**Response `200 OK`:** как `GET /meetings/{id}`.
+
+**Ошибки:** `403 not_demo`, `403 staff_only`.
+
+## Вне объёма до 30.09
+
+Ниже описан дизайн на будущее, эти ручки в «Известных ограничениях» README. Внесение итогов ГИС ЖКХ — пункт Should
+(Г8), если останется время.
 
 ### Путь B — самостоятельная организация без УК
 
@@ -702,105 +1044,6 @@
 
 Операция идемпотентна. Если путь B уже выбран, сервер возвращает текущее состояние. Если УК уже
 создала активное собрание, возвращается `409 active_meeting_exists`.
-
-### `POST /api/v1/initiatives/{id}/demand`
-
-При поддержке не менее 10% выбирает путь A и создаёт требование к УК провести собрание.
-
-**Request body:**
-
-```json
-{
-  "channel": "paper"
-}
-```
-
-`channel` принимает `paper` или `gosuslugi_dom`.
-
-**Response `201 Created`:** `{id, initiative_id, channel, support_m2, status: "draft"}`.
-
-### `POST /api/v1/demands/{id}/mark-delivered`
-
-Отмечает передачу требования в УК и запускает отсчёт 45 дней.
-
-**Request body:**
-
-```json
-{
-  "delivered_at": "2026-10-03T12:00:00+03:00"
-}
-```
-
-**Response `200 OK`:** `{id, delivered_at, uk_due_at, overdue: false}`.
-
-### `GET /api/v1/demands/{id}/pdf`
-
-Генерирует требование в УК по текущим данным.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** PDF, `Content-Type: application/pdf`.
-
-## Минимальный API кабинета УК
-
-### `GET /api/v1/orgs`
-
-Возвращает управляющие организации, в которых текущий пользователь является сотрудником.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** список `{id, type, name, role}`.
-
-### `GET /api/v1/orgs/{orgID}/houses`
-
-Возвращает дома выбранной УК.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** список `{id, address, region, is_demo, current_registry_version}`.
-
-### `GET /api/v1/orgs/{orgID}/demands`
-
-Возвращает входящие требования собственников провести собрание.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** список `{id, initiative_id, house, delivered_at, uk_due_at, overdue}`.
-
-### `POST /api/v1/initiatives/{id}/meetings`
-
-Создаёт собрание по требованию. На пути A вызывает сотрудник УК, на пути B — инициатор.
-
-**Request body:**
-
-```json
-{
-  "form": "gis_electronic",
-  "notice_at": "2026-10-05T12:00:00+03:00",
-  "voting_starts_at": "2026-10-15T09:00:00+03:00",
-  "voting_ends_at": "2026-10-25T20:00:00+03:00",
-  "chair_owner_id": "0199...",
-  "secretary_owner_id": "0199..."
-}
-```
-
-**Response `201 Created`:** `{id, initiative_id, attempt, status: "preparation", form}`.
-
-### `GET /api/v1/meetings/{id}`
-
-Возвращает сроки, статус, повестку и агрегированный прогресс собрания.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** `{id, status, form, dates, agenda_items, participants_m2, quorum}`.
-
-### `GET /api/v1/meetings/{id}/tracker`
-
-Возвращает трекер «голосовал / не голосовал». Доступные детали зависят от роли пользователя.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** `{summary, premises}` без раскрытия конкретного варианта чужого голоса.
 
 ### `PUT /api/v1/meetings/{id}/my-online-status`
 
@@ -871,38 +1114,6 @@
 
 **Response `200 OK`:** PDF, `Content-Type: application/pdf`.
 
-### `POST /api/v1/meetings/{id}/ballots/receive`
-
-Отмечает получение бумажного бюллетеня по QR-токену или номеру помещения.
-
-**Request body:**
-
-```json
-{
-  "qr_token": "url-safe-token"
-}
-```
-
-**Response `200 OK`:** `{ballot_id, status: "paper_received", received_at}`.
-
-### `PUT /api/v1/ballots/{id}/decisions`
-
-После окончания голосования вносит решения из бумажного бюллетеня.
-
-**Request body:**
-
-```json
-{
-  "decisions": [
-    {"agenda_item_id": "0199...", "choice": "for"}
-  ]
-}
-```
-
-`choice` принимает `for`, `against` или `abstain`.
-
-**Response `200 OK`:** `{ballot_id, status: "counted", decisions}`.
-
 ### `PUT /api/v1/meetings/{id}/gis-results`
 
 Вносит официальные агрегированные результаты онлайн-голосования из ГИС ЖКХ. В MVP данные модельные.
@@ -925,22 +1136,6 @@
 
 **Response `200 OK`:** сохранённые официальные агрегаты.
 
-### `GET /api/v1/meetings/{id}/result-preview`
-
-Считает кворум и результат каждого вопроса без окончательной фиксации.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** `{quorum_reached, participants_m2, agenda_results}`.
-
-### `POST /api/v1/meetings/{id}/finalize`
-
-Неизменяемо фиксирует официальный результат собрания по каждому вопросу.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** `{meeting_id, outcome, finalized_at, results}`.
-
 ### `GET /api/v1/meetings/{id}/notice.pdf`
 
 Генерирует сообщение о проведении собрания.
@@ -956,14 +1151,6 @@
 **Request body:** отсутствует.
 
 **Response `200 OK`:** ZIP-архив с PDF-бюллетенями.
-
-### `GET /api/v1/meetings/{id}/protocol.pdf`
-
-Генерирует протокол только из зафиксированных `MeetingResult`.
-
-**Request body:** отсутствует.
-
-**Response `200 OK`:** PDF, `Content-Type: application/pdf`.
 
 ## Минимум для подключения реальной УК после демо
 

@@ -1,12 +1,19 @@
 package httpapi
 
-// Meeting endpoints (Гоша, docs/plan-do-30-09.md, Г2–Г6). The routes and error
-// codes are fixed by this skeleton: replace the 501 stubs, add the Meetings
-// interface to Deps in server.go (Костя) and the wiring in main.go.
+// Meeting endpoints (Гоша, docs/plan-do-30-09.md, Г2–Г6). The routes, the Deps
+// field and the error codes are fixed by the skeleton: replace the 501 stubs, add
+// methods to Meetings below and the wiring in main.go. server.go needs no change.
+// The staff acts through access.ManagesAsStaff, not IsStaffOf: in the demo house a
+// tester runs only the meetings of their own initiatives (решение 79). The protocol
+// PDF is Дима's (documents.go).
 
 import (
 	"github.com/gin-gonic/gin"
 )
+
+// Meetings is the meeting module (Гоша adds the methods in Г2, h.meetings is nil
+// until the wiring in main.go).
+type Meetings interface{}
 
 func (h *handlers) createMeeting(c *gin.Context) {
 	notImplemented(c, "Собрание появится вместе с модулем собрания (Г2)")
@@ -34,10 +41,6 @@ func (h *handlers) meetingResultPreview(c *gin.Context) {
 
 func (h *handlers) finalizeMeeting(c *gin.Context) {
 	notImplemented(c, "Фиксация итога появится вместе с модулем собрания (Г5)")
-}
-
-func (h *handlers) meetingProtocolPDF(c *gin.Context) {
-	notImplemented(c, "Протокол появится вместе с модулем документов (Д5)")
 }
 
 func (h *handlers) demoFinishVoting(c *gin.Context) {
