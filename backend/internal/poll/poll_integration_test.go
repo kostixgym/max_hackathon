@@ -12,12 +12,14 @@ package poll
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -133,17 +135,26 @@ func TestPollFlowIntegration(t *testing.T) {
 		t.Fatalf("second account on the same owner: %v, want ErrOwnerTaken", err)
 	}
 
+	// The params are checked against the form of the template (решение 14).
+	var paramsErr *rules.ParamsError
+	if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
+		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
+		Title: "Без способа оплаты", Params: json.RawMessage(`{"camera_count": 3}`),
+	}); !errors.As(err, &paramsErr) || paramsErr.Field != "payment_method" || paramsErr.Reason != rules.ParamsRequired {
+		t.Fatalf("params without a required field: %v, want a ParamsError of payment_method", err)
+	}
+
 	initiative, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
 		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
 		Title: "  Камеры в подъезде  ", Description: "3 камеры, хранение 30 дней",
-		Params: map[string]any{"camera_count": 3},
+		Params: json.RawMessage(`{"camera_count": 3, "payment_method": "management_bill"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	initiativeID = initiative.ID
 	if initiative.Stage != "draft" || initiative.RegistryUploadID == "" || initiative.Description == "" ||
-		initiative.Title != "Камеры в подъезде" || initiative.RegistryVersion != 1 {
+		initiative.Title != "Камеры в подъезде" || initiative.RegistryVersion != 1 || initiative.CreatedAt.IsZero() {
 		t.Fatalf("initiative = %+v", initiative)
 	}
 	// The agenda starts with the procedural question: the protocol names the chair and the secretary.
@@ -155,6 +166,20 @@ func TestPollFlowIntegration(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT params->>'camera_count' FROM initiatives WHERE id = $1::uuid`,
 		initiative.ID).Scan(&cameras); err != nil || cameras != "3" {
 		t.Fatalf("stored params: camera_count = %q, %v", cameras, err)
+	}
+
+	// Решение 76: the draft is Alice's until the poll starts; Bob does not see it.
+	listed := func(u access.User) bool {
+		t.Helper()
+		list, err := initService.ListByHouse(ctx, house.ID, u.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return slices.ContainsFunc(list, func(in initiatives.Initiative) bool { return in.ID == initiative.ID })
+	}
+	if !listed(alice) || listed(bob) {
+		t.Fatalf("draft: listed for alice = %v, for bob = %v; want only alice", listed(alice), listed(bob))
 	}
 
 	// Решение 2: the snapshot is taken when the poll starts. The draft is pointed to
@@ -189,6 +214,25 @@ func TestPollFlowIntegration(t *testing.T) {
 	}
 	if _, err := initService.Get(ctx, "not-a-uuid"); !errors.Is(err, initiatives.ErrNotFound) {
 		t.Fatalf("malformed id: %v, want ErrNotFound", err)
+	}
+	if !listed(bob) {
+		t.Fatal("after the start of the poll the neighbours see the initiative")
+	}
+
+	// The card: the agenda with the majorities, the template version, the snapshot the
+	// thresholds are counted by (3 000 м² of the demo house).
+	card, err := initService.Details(ctx, initiative.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Stage != "poll" || card.RegistryVersion != 1 || card.TotalAreaCenti != 300000 || card.Template == nil ||
+		card.Template.Code != rules.TemplateVideoSurveillance || card.Template.Version != 1 ||
+		!strings.Contains(string(card.Params), "management_bill") || !card.IsLedBy(alice.ID) {
+		t.Fatalf("card = %+v", card)
+	}
+	if items := card.AgendaItems; len(items) != 2 || items[0].Position != 1 ||
+		items[1].MajorityRule != string(rules.TwoThirdsOfAll) || !strings.Contains(items[1].LegalReference, "ч. 1 ст. 46") {
+		t.Fatalf("card agenda = %+v", card.AgendaItems)
 	}
 
 	// Invitations: in the demo house only the initiator gets one (решение 72), the other
@@ -293,6 +337,21 @@ func TestPollFlowIntegration(t *testing.T) {
 		t.Fatalf("votes = %d/%d, want 2/2", progress.VotesFor, progress.VotesAgainst)
 	}
 
+	// The card shows the caller's own vote: Carol's two flats sum up, Alice's «против»
+	// has no survey, Dave has not voted.
+	mine, voted, err := polls.MyVote(ctx, initiative.ID, carol.ID)
+	if err != nil || !voted || mine.Choice != ChoiceFor ||
+		big.NewRat(mine.WeightNum, mine.WeightDen*100).Cmp(big.NewRat(94, 3)) != 0 {
+		t.Fatalf("carol's vote = %+v %v %v, want «за» 94/3 м²", mine, voted, err)
+	}
+	if mine, voted, err = polls.MyVote(ctx, initiative.ID, alice.ID); err != nil || !voted ||
+		mine.Choice != ChoiceAgainst || mine.OfficialChannel != "" || mine.WillingToHelp {
+		t.Fatalf("alice's vote = %+v %v %v, want «против» without the survey", mine, voted, err)
+	}
+	if _, voted, err = polls.MyVote(ctx, initiative.ID, dave.ID); err != nil || voted {
+		t.Fatalf("dave's vote: %v %v, want none", voted, err)
+	}
+
 	// An outsider without a verified link cannot vote.
 	if _, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: dave.ID, Choice: ChoiceFor}); !errors.Is(err, ErrNotOwner) {
 		t.Fatalf("dave vote: %v", err)
@@ -333,19 +392,36 @@ func TestPollFlowIntegration(t *testing.T) {
 		!strings.Contains(tpl.Items[1].LegalReference, "ч. 1 ст. 46") {
 		t.Fatalf("template = %+v", tpl)
 	}
+	// The form comes from the database as seeded: the mini-app builds it from the schema.
+	if schema, err := rules.CompileParamsSchema(tpl.ParamsSchema); err != nil || !strings.Contains(string(tpl.UISchema), "enum_titles") {
+		t.Fatalf("stored form of the template: %v, ui = %s", err, tpl.UISchema)
+	} else if err := schema.Validate([]byte(`{"camera_count": 3, "payment_method": "management_bill"}`)); err != nil {
+		t.Fatalf("stored schema: %v", err)
+	}
+	if byID, err := catalog.TemplateByID(ctx, tpl.ID); err != nil || byID.Code != tpl.Code || len(byID.Items) != 2 {
+		t.Fatalf("template by id = %+v, %v", byID, err)
+	}
+	list, err := catalog.Templates(ctx)
+	if err != nil || !slices.ContainsFunc(list, func(c rules.CatalogTemplate) bool {
+		return c.Code == rules.TemplateVideoSurveillance && c.Version == 1 && c.Name == "Видеонаблюдение"
+	}) {
+		t.Fatalf("templates = %+v, %v", list, err)
+	}
 
 	// One account creates at most MaxInitiativesPerDay initiatives in 24 hours: each
 	// may message the owners of the house.
+	params := json.RawMessage(`{"camera_count": 1, "payment_method": "special_assessment"}`)
 	for i := 1; i < initiatives.MaxInitiativesPerDay; i++ {
 		if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
 			HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
-			Title: fmt.Sprintf("Инициатива %d", i),
+			Title: fmt.Sprintf("Инициатива %d", i), Params: params,
 		}); err != nil {
 			t.Fatalf("initiative %d: %v", i, err)
 		}
 	}
 	if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
 		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance, Title: "Лишняя",
+		Params: params,
 	}); !errors.Is(err, initiatives.ErrTooManyInitiatives) {
 		t.Fatalf("initiative over the daily limit: %v, want ErrTooManyInitiatives", err)
 	}

@@ -1,6 +1,7 @@
 package initiatives
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,13 +32,26 @@ type Recipient struct {
 // Templates reads the rules module catalog.
 type Templates interface {
 	TemplateByCode(ctx context.Context, code string) (rules.CatalogTemplate, error)
+	TemplateByID(ctx context.Context, id string) (rules.CatalogTemplate, error)
+	DecisionTypes(ctx context.Context, ids []string) ([]rules.DecisionType, error)
 }
 
 // Registry reads houses and registry snapshots (the registry module).
 type Registry interface {
 	House(ctx context.Context, id string) (registry.HouseRef, error)
 	CurrentSnapshot(ctx context.Context, houseID string) (registry.Snapshot, error)
+	Snapshot(ctx context.Context, uploadID string) (registry.Snapshot, error)
 }
+
+// Stages of an initiative (docs/04, решение 48).
+const (
+	StageDraft     = "draft"
+	StagePoll      = "poll"
+	StageDemand    = "demand"
+	StageMeeting   = "meeting"
+	StageCompleted = "completed"
+	StageCanceled  = "canceled"
+)
 
 // Recipients reads the poll audience from the access module.
 type Recipients interface {
@@ -98,14 +112,16 @@ type CreateInput struct {
 	TemplateCode    string
 	Title           string
 	Description     string
-	// Params are the values of the template form (docs/04, решение 14). They are
-	// stored as given: the MVP templates have an empty schema, which accepts any object.
-	Params map[string]any
+	// Params are the values of the template form (docs/04, решение 14), a JSON object.
+	// They are checked against the schema of the template and stored as given; nil is
+	// an empty object.
+	Params json.RawMessage
 }
 
 // CreateFromTemplate creates a draft initiative with the agenda of the template. The
 // draft points to the current registry version; the poll start pins the snapshot
-// (docs/04, принцип 3 и решение 2).
+// (docs/04, принцип 3 и решение 2). Params that do not match the template form are a
+// *rules.ParamsError.
 func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initiative, error) {
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
@@ -113,12 +129,8 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 	}
 	description := strings.TrimSpace(in.Description)
 	params := in.Params
-	if params == nil {
-		params = map[string]any{}
-	}
-	paramsJSON, err := json.Marshal(params)
-	if err != nil {
-		return Initiative{}, fmt.Errorf("initiative params: %w", err)
+	if trimmed := bytes.TrimSpace(params); len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
+		params = json.RawMessage(`{}`)
 	}
 
 	tpl, err := s.templates.TemplateByCode(ctx, in.TemplateCode)
@@ -127,6 +139,9 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 	}
 	if len(tpl.Items) == 0 {
 		return Initiative{}, fmt.Errorf("template %s has no items", in.TemplateCode)
+	}
+	if err := tpl.ValidateParams(params); err != nil {
+		return Initiative{}, err
 	}
 
 	snap, err := s.registry.CurrentSnapshot(ctx, in.HouseID)
@@ -157,8 +172,8 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 			INSERT INTO initiatives (house_id, template_id, title, description, params, stage,
 			                         registry_upload_id, initiator_user_id, author_user_id)
 			VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'draft', $6::uuid, $7::uuid, $7::uuid)
-			RETURNING id::text`, in.HouseID, tpl.ID, title, descriptionValue, paramsJSON, snap.UploadID, in.InitiatorUserID,
-		).Scan(&created.ID)
+			RETURNING id::text, created_at`, in.HouseID, tpl.ID, title, descriptionValue, string(params), snap.UploadID, in.InitiatorUserID,
+		).Scan(&created.ID, &created.CreatedAt)
 		if err != nil {
 			return fmt.Errorf("create initiative: %w", err)
 		}
@@ -181,14 +196,19 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 	created.HouseID = in.HouseID
 	created.Title = title
 	created.Description = description
-	created.Stage = "draft"
+	created.Stage = StageDraft
 	created.RegistryUploadID = snap.UploadID
 	created.RegistryVersion = snap.Version
+	created.TotalAreaCenti = snap.TotalAreaCenti
 	created.InitiatorUserID = &in.InitiatorUserID
+	created.AuthorUserID = &in.InitiatorUserID
 	created.TemplateID = &tpl.ID
+	created.Template = &TemplateRef{Code: tpl.Code, Name: tpl.Name, Version: tpl.Version}
+	created.Params = params
 	for _, item := range tpl.Items {
 		created.AgendaItems = append(created.AgendaItems, AgendaItem{
 			Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
+			LegalReference: item.LegalReference,
 		})
 	}
 
@@ -203,10 +223,12 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 	if err != nil {
 		return Initiative{}, err
 	}
-	if current.InitiatorUserID == nil || *current.InitiatorUserID != byUserID {
+	// The same rule shows or hides the button in the card.
+	switch current.startPollBlocked(byUserID) {
+	case "":
+	case ReasonNotInitiator:
 		return Initiative{}, ErrNotInitiator
-	}
-	if current.Stage != "draft" {
+	default:
 		return Initiative{}, fmt.Errorf("%w: %s", ErrWrongStage, current.Stage)
 	}
 	if pollEndsAt.IsZero() {
@@ -266,10 +288,11 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 		return Initiative{}, err
 	}
 
-	current.Stage = "poll"
+	current.Stage = StagePoll
 	current.PollEndsAt = &pollEndsAt
 	current.RegistryUploadID = snap.UploadID
 	current.RegistryVersion = snap.Version
+	current.TotalAreaCenti = snap.TotalAreaCenti
 
 	return current, nil
 }
@@ -333,21 +356,44 @@ type Initiative struct {
 	Title            string
 	Description      string
 	Stage            string
+	Path             *string // A or B, chosen after the poll (решение 45)
 	PollEndsAt       *time.Time
 	RegistryUploadID string
 	InitiatorUserID  *string
+	AuthorUserID     *string
+	CreatedAt        time.Time
+	// Params are the values of the template form, a JSON object.
+	Params json.RawMessage
 
-	// Filled by CreateFromTemplate and StartPoll only: the version of the registry
-	// snapshot and (on creation) the agenda copied from the template.
+	// Filled by CreateFromTemplate, StartPoll and Details: the registry snapshot the
+	// votes and thresholds are counted by.
 	RegistryVersion int
-	AgendaItems     []AgendaItem
+	TotalAreaCenti  int64
+	// Filled by CreateFromTemplate and Details: the agenda and the template version.
+	AgendaItems []AgendaItem
+	Template    *TemplateRef
+}
+
+// TemplateRef is the template version an initiative was created from.
+type TemplateRef struct {
+	Code    string
+	Name    string
+	Version int
 }
 
 // AgendaItem is one question of the agenda with the majority it needs.
 type AgendaItem struct {
-	Position     int
-	Text         string
-	MajorityRule string
+	Position       int
+	Text           string
+	MajorityRule   string
+	LegalReference string
+}
+
+// IsLedBy reports whether the user leads the initiative: its initiator or the author
+// of the idea (docs/04, решение 11).
+func (in Initiative) IsLedBy(userID string) bool {
+	return (in.InitiatorUserID != nil && *in.InitiatorUserID == userID) ||
+		(in.AuthorUserID != nil && *in.AuthorUserID == userID)
 }
 
 // Get returns the initiative by id. Hidden initiatives are ErrNotFound.
@@ -358,12 +404,14 @@ func (s *Service) Get(ctx context.Context, id string) (Initiative, error) {
 	}
 	var description *string
 	err := s.pool.QueryRow(ctx, `
-		SELECT id::text, house_id::text, template_id::text, title, description, stage,
-		       poll_ends_at, registry_upload_id::text, initiator_user_id::text
+		SELECT id::text, house_id::text, template_id::text, title, description, stage, path,
+		       poll_ends_at, registry_upload_id::text, initiator_user_id::text, author_user_id::text,
+		       created_at, params
 		FROM initiatives
 		WHERE id = $1::uuid AND hidden_at IS NULL`, id,
-	).Scan(&in.ID, &in.HouseID, &in.TemplateID, &in.Title, &description, &in.Stage,
-		&in.PollEndsAt, &in.RegistryUploadID, &in.InitiatorUserID)
+	).Scan(&in.ID, &in.HouseID, &in.TemplateID, &in.Title, &description, &in.Stage, &in.Path,
+		&in.PollEndsAt, &in.RegistryUploadID, &in.InitiatorUserID, &in.AuthorUserID,
+		&in.CreatedAt, &in.Params)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return in, ErrNotFound
 	}

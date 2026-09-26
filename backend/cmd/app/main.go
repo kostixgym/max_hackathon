@@ -117,12 +117,14 @@ func run() error {
 		Log:      log,
 		DevMode:  cfg.DevMode,
 
-		Access:       users,
-		Initiatives:  initService,
-		PollStarter:  initService,
-		PollProgress: polls,
-		Votes:        polls,
-		DemoMembers:  users,
+		Access:           users,
+		Templates:        catalog,
+		Initiatives:      initService,
+		InitiativeReader: initService,
+		PollStarter:      initService,
+		PollProgress:     polls,
+		Votes:            polls,
+		DemoMembers:      users,
 	})
 
 	var wg sync.WaitGroup

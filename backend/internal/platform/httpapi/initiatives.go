@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,9 +20,10 @@ import (
 )
 
 // Initiative endpoints of stage 1 (docs/API_DESCRIPTION.md, «Минимальный API сквозного
-// MVP»): create from a template, start the poll, vote from the mini-app, watch the
-// progress in м². A verified owner of the house creates and votes; the progress is
-// visible to verified members and the management company (решения 19, 43).
+// MVP»): create from a template, list and open initiatives, start the poll, vote from
+// the mini-app, watch the progress in м². A verified owner of the house creates and
+// votes. The initiatives are visible to verified members and the management company
+// (решения 19, 43), a draft only to those who lead it (решение 76).
 
 // InitiativeCreator creates initiatives (the initiatives module).
 type InitiativeCreator interface {
@@ -34,14 +36,21 @@ type PollStarter interface {
 	Get(ctx context.Context, id string) (initiatives.Initiative, error)
 }
 
+// InitiativeReader reads the list of a house and the card (the initiatives module).
+type InitiativeReader interface {
+	ListByHouse(ctx context.Context, houseID, viewerID string) ([]initiatives.Initiative, error)
+	Details(ctx context.Context, id string) (initiatives.Initiative, error)
+}
+
 // PollProgress reads the poll progress (the poll module).
 type PollProgress interface {
 	Progress(ctx context.Context, initiativeID string) (poll.Progress, error)
 }
 
-// Voter casts poll votes (the poll module).
+// Voter casts poll votes and reads the caller's own vote (the poll module).
 type Voter interface {
 	CastVote(ctx context.Context, in poll.CastInput) (poll.CastResult, error)
+	MyVote(ctx context.Context, initiativeID, userID string) (poll.MyVote, bool, error)
 }
 
 // DemoMembership confirms an owner in a demo house (the access module).
@@ -65,10 +74,11 @@ func (h *handlers) createInitiative(c *gin.Context) {
 	houseID := c.Param("house")
 
 	var body struct {
-		TemplateCode string         `json:"template_code" binding:"required"`
-		Title        string         `json:"title" binding:"required,max=200"`
-		Description  string         `json:"description" binding:"max=2000"`
-		Params       map[string]any `json:"params"`
+		TemplateCode string `json:"template_code" binding:"required"`
+		Title        string `json:"title" binding:"required,max=200"`
+		Description  string `json:"description" binding:"max=2000"`
+		// Checked against the form of the template by the initiatives module.
+		Params json.RawMessage `json:"params"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		writeError(c, http.StatusBadRequest, "invalid_request", "Проверьте поля запроса")
@@ -98,7 +108,10 @@ func (h *handlers) createInitiative(c *gin.Context) {
 		Description:     body.Description,
 		Params:          body.Params,
 	})
+	var paramsErr *rules.ParamsError
 	switch {
+	case errors.As(err, &paramsErr):
+		writeFieldError(c, http.StatusBadRequest, "invalid_params", paramsMessage(paramsErr), paramsErr.Field)
 	case errors.Is(err, initiatives.ErrEmptyTitle):
 		writeError(c, http.StatusBadRequest, "invalid_request", "Укажите название инициативы")
 	case errors.Is(err, initiatives.ErrTooManyInitiatives):
@@ -234,29 +247,13 @@ func (h *handlers) pollProgressHandler(c *gin.Context) {
 		return
 	}
 
-	initiativeID := c.Param("id")
-	initiative, err := h.pollStarter.Get(c.Request.Context(), initiativeID)
-	if err != nil {
-		h.writeInitiativeError(c, err, "get initiative for progress")
-
-		return
-	}
-
 	// Прогресс видят подтверждённые жители дома (решение 19) и сотрудники УК (решение 43).
-	allowed, err := h.access.MayViewInitiatives(c.Request.Context(), id.UserID, initiative.HouseID)
-	if err != nil {
-		h.log.Error("check access to progress", "err", err)
-		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить опрос, попробуйте ещё раз")
-
-		return
-	}
-	if !allowed {
-		writeError(c, http.StatusForbidden, "not_member", "Прогресс видят подтверждённые жители дома")
-
+	initiative, ok := h.visibleInitiative(c, id.UserID, c.Param("id"), h.pollStarter.Get)
+	if !ok {
 		return
 	}
 
-	progress, err := h.pollProgress.Progress(c.Request.Context(), initiativeID)
+	progress, err := h.pollProgress.Progress(c.Request.Context(), initiative.ID)
 	if err != nil {
 		h.log.Error("poll progress", "err", err)
 		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить опрос, попробуйте ещё раз")
@@ -267,6 +264,132 @@ func (h *handlers) pollProgressHandler(c *gin.Context) {
 	writeJSON(c, http.StatusOK, toProgressJSON(initiative, progress))
 }
 
+// listInitiatives is the list of a house: the verified members and the staff of its
+// management company see it (решения 19, 43).
+func (h *handlers) listInitiatives(c *gin.Context) {
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+	houseID := c.Param("house")
+
+	allowed, err := h.access.MayViewInitiatives(c.Request.Context(), id.UserID, houseID)
+	if err != nil {
+		h.log.Error("check access to initiatives", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативы, попробуйте ещё раз")
+
+		return
+	}
+	if !allowed {
+		writeError(c, http.StatusForbidden, "not_member", "Инициативы дома видят его подтверждённые жители")
+
+		return
+	}
+
+	list, err := h.initiativeReader.ListByHouse(c.Request.Context(), houseID, id.UserID)
+	if err != nil {
+		h.log.Error("list initiatives", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативы, попробуйте ещё раз")
+
+		return
+	}
+
+	resp := initiativesResponse{Initiatives: make([]initiativeListItemJSON, 0, len(list))}
+	for _, in := range list {
+		resp.Initiatives = append(resp.Initiatives, initiativeListItemJSON{
+			ID: in.ID, Title: in.Title, Stage: in.Stage, Path: in.Path, PollEndsAt: in.PollEndsAt,
+			CreatedAt: in.CreatedAt, IsInitiator: isInitiator(in, id.UserID),
+		})
+	}
+	writeJSON(c, http.StatusOK, resp)
+}
+
+// initiativeCard is the card: the initiative, its agenda and thresholds, the caller's
+// vote and the actions the caller may take now.
+func (h *handlers) initiativeCard(c *gin.Context) {
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+
+	in, ok := h.visibleInitiative(c, id.UserID, c.Param("id"), h.initiativeReader.Details)
+	if !ok {
+		return
+	}
+
+	owner, err := h.access.IsVerifiedOwnerIn(c.Request.Context(), id.UserID, in.HouseID)
+	if err != nil {
+		h.log.Error("check owner for card", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативу, попробуйте ещё раз")
+
+		return
+	}
+	vote, voted, err := h.votes.MyVote(c.Request.Context(), in.ID, id.UserID)
+	if err != nil {
+		h.log.Error("my vote for card", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативу, попробуйте ещё раз")
+
+		return
+	}
+
+	card := toCardJSON(in, id.UserID, in.Actions(initiatives.Viewer{UserID: id.UserID, Owner: owner}))
+	if voted {
+		card.MyVote = &myVoteCardJSON{
+			Choice:        vote.Choice,
+			WeightM2:      m2(new(big.Rat).SetFrac64(vote.WeightNum, vote.WeightDen*100)),
+			WillingToHelp: vote.WillingToHelp,
+			UpdatedAt:     vote.UpdatedAt,
+		}
+		if vote.OfficialChannel != "" {
+			card.MyVote.OfficialChannel = &vote.OfficialChannel
+		}
+	}
+	writeJSON(c, http.StatusOK, card)
+}
+
+// visibleInitiative loads the initiative and checks that the caller may see it: a
+// draft only those who lead it (решение 76), any other stage also the verified
+// members of the house and the staff of its company (решения 19, 43). When the caller
+// may not, it writes the error and returns false.
+func (h *handlers) visibleInitiative(c *gin.Context, userID, initiativeID string,
+	load func(ctx context.Context, id string) (initiatives.Initiative, error),
+) (initiatives.Initiative, bool) {
+	in, err := load(c.Request.Context(), initiativeID)
+	if err != nil {
+		h.writeInitiativeError(c, err, "load initiative")
+
+		return in, false
+	}
+	if in.IsLedBy(userID) {
+		return in, true
+	}
+	if in.Stage == initiatives.StageDraft {
+		// A draft of another user does not exist for the caller.
+		writeError(c, http.StatusNotFound, "initiative_not_found", "Инициатива не найдена")
+
+		return in, false
+	}
+
+	allowed, err := h.access.MayViewInitiatives(c.Request.Context(), userID, in.HouseID)
+	if err != nil {
+		h.log.Error("check access to initiative", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативу, попробуйте ещё раз")
+
+		return in, false
+	}
+	if !allowed {
+		writeError(c, http.StatusForbidden, "not_member", "Инициативы дома видят его подтверждённые жители")
+
+		return in, false
+	}
+
+	return in, true
+}
+
 func (h *handlers) writeInitiativeError(c *gin.Context, err error, what string) {
 	if errors.Is(err, initiatives.ErrNotFound) {
 		writeError(c, http.StatusNotFound, "initiative_not_found", "Инициатива не найдена")
@@ -275,6 +398,35 @@ func (h *handlers) writeInitiativeError(c *gin.Context, err error, what string) 
 	}
 	h.log.Error(what, "err", err)
 	writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативу, попробуйте ещё раз")
+}
+
+// paramsMessage explains to the user what is wrong with a field of the form.
+func paramsMessage(e *rules.ParamsError) string {
+	label := e.Title
+	if label == "" {
+		label = e.Field
+	}
+
+	switch e.Reason {
+	case rules.ParamsNotObject:
+		return "Поля формы переданы в неверном формате"
+	case rules.ParamsUnknownField:
+		return "В форме шаблона нет такого поля"
+	case rules.ParamsRequired:
+		return fmt.Sprintf("Заполните поле «%s»", label)
+	case rules.ParamsEnum:
+		return fmt.Sprintf("Выберите значение поля «%s» из списка", label)
+	case rules.ParamsMinimum:
+		return fmt.Sprintf("Поле «%s»: значение не меньше %s", label, e.Limit)
+	case rules.ParamsMaximum:
+		return fmt.Sprintf("Поле «%s»: значение не больше %s", label, e.Limit)
+	case rules.ParamsMinLength:
+		return fmt.Sprintf("Поле «%s»: длина не меньше %s", label, e.Limit)
+	case rules.ParamsMaxLength:
+		return fmt.Sprintf("Поле «%s»: длина не больше %s", label, e.Limit)
+	default:
+		return fmt.Sprintf("Проверьте значение поля «%s»", label)
+	}
 }
 
 // demoMembership is a shortcut of the demo house: the jury confirms itself as an owner
@@ -347,26 +499,129 @@ type initiativeJSON struct {
 }
 
 type agendaItemJSON struct {
-	Position     int    `json:"position"`
-	Text         string `json:"text"`
-	MajorityRule string `json:"majority_rule"`
+	Position       int    `json:"position"`
+	Text           string `json:"text"`
+	MajorityRule   string `json:"majority_rule"`
+	LegalReference string `json:"legal_reference,omitempty"`
 }
 
 // toInitiativeJSON: is_initiator says whether the caller leads the initiative.
 func toInitiativeJSON(in initiatives.Initiative, callerID string) initiativeJSON {
-	j := initiativeJSON{
+	return initiativeJSON{
 		ID: in.ID, HouseID: in.HouseID, Title: in.Title, Description: in.Description,
 		Stage: in.Stage, PollEndsAt: in.PollEndsAt,
-		IsInitiator:     in.InitiatorUserID != nil && *in.InitiatorUserID == callerID,
+		IsInitiator:     isInitiator(in, callerID),
 		RegistryVersion: in.RegistryVersion,
+		AgendaItems:     toAgendaJSON(in.AgendaItems),
 	}
-	for _, item := range in.AgendaItems {
-		j.AgendaItems = append(j.AgendaItems, agendaItemJSON{
+}
+
+func isInitiator(in initiatives.Initiative, userID string) bool {
+	return in.InitiatorUserID != nil && *in.InitiatorUserID == userID
+}
+
+func toAgendaJSON(items []initiatives.AgendaItem) []agendaItemJSON {
+	if items == nil {
+		return nil
+	}
+	result := make([]agendaItemJSON, 0, len(items))
+	for _, item := range items {
+		result = append(result, agendaItemJSON{
 			Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
+			LegalReference: item.LegalReference,
 		})
 	}
 
-	return j
+	return result
+}
+
+type initiativesResponse struct {
+	Initiatives []initiativeListItemJSON `json:"initiatives"`
+}
+
+type initiativeListItemJSON struct {
+	ID          string     `json:"id"`
+	Title       string     `json:"title"`
+	Stage       string     `json:"stage"`
+	Path        *string    `json:"path"`
+	PollEndsAt  *time.Time `json:"poll_ends_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	IsInitiator bool       `json:"is_initiator"`
+}
+
+// initiativeCardJSON is GET /initiatives/{id}. Areas are decimal strings in м², the
+// thresholds come from the registry snapshot of the initiative (решение 55).
+type initiativeCardJSON struct {
+	ID              string           `json:"id"`
+	HouseID         string           `json:"house_id"`
+	Title           string           `json:"title"`
+	Description     string           `json:"description"`
+	Stage           string           `json:"stage"`
+	Path            *string          `json:"path"`
+	PollEndsAt      *time.Time       `json:"poll_ends_at"`
+	CreatedAt       time.Time        `json:"created_at"`
+	IsInitiator     bool             `json:"is_initiator"`
+	Template        *templateRefJSON `json:"template"`
+	Params          json.RawMessage  `json:"params"`
+	RegistryVersion int              `json:"registry_version"`
+	TotalAreaM2     string           `json:"total_area_m2"`
+	Thresholds      thresholdsJSON   `json:"thresholds"`
+	AgendaItems     []agendaItemJSON `json:"agenda_items"`
+	MyVote          *myVoteCardJSON  `json:"my_vote"`
+	AllowedActions  []actionJSON     `json:"allowed_actions"`
+}
+
+type templateRefJSON struct {
+	Code    string `json:"code"`
+	Name    string `json:"name"`
+	Version int    `json:"version"`
+}
+
+// myVoteCardJSON is the caller's vote in the poll; the survey is asked of «за» only.
+type myVoteCardJSON struct {
+	Choice          string    `json:"choice"`
+	WeightM2        string    `json:"weight_m2"`
+	OfficialChannel *string   `json:"official_channel"`
+	WillingToHelp   bool      `json:"willing_to_help"`
+	UpdatedAt       time.Time `json:"updated_at"`
+}
+
+type actionJSON struct {
+	Code       string `json:"code"`
+	Allowed    bool   `json:"allowed"`
+	ReasonCode string `json:"reason_code,omitempty"`
+}
+
+func toCardJSON(in initiatives.Initiative, callerID string, actions []initiatives.Action) initiativeCardJSON {
+	total := registry.CentiToM2(in.TotalAreaCenti)
+	t := rules.ForTotal(total)
+	card := initiativeCardJSON{
+		ID: in.ID, HouseID: in.HouseID, Title: in.Title, Description: in.Description,
+		Stage: in.Stage, Path: in.Path, PollEndsAt: in.PollEndsAt, CreatedAt: in.CreatedAt,
+		IsInitiator:     isInitiator(in, callerID),
+		Params:          in.Params,
+		RegistryVersion: in.RegistryVersion,
+		TotalAreaM2:     m2(total),
+		Thresholds: thresholdsJSON{
+			DemandM2: m2(t.Demand), QuorumAboveM2: m2(t.QuorumAbove), TwoThirdsM2: m2(t.TwoThirds),
+		},
+		AgendaItems:    toAgendaJSON(in.AgendaItems),
+		AllowedActions: make([]actionJSON, 0, len(actions)),
+	}
+	if len(card.Params) == 0 {
+		card.Params = json.RawMessage(`{}`)
+	}
+	if card.AgendaItems == nil {
+		card.AgendaItems = []agendaItemJSON{}
+	}
+	if in.Template != nil {
+		card.Template = &templateRefJSON{Code: in.Template.Code, Name: in.Template.Name, Version: in.Template.Version}
+	}
+	for _, a := range actions {
+		card.AllowedActions = append(card.AllowedActions, actionJSON{Code: a.Code, Allowed: a.Allowed, ReasonCode: a.Reason})
+	}
+
+	return card
 }
 
 type myVoteJSON struct {

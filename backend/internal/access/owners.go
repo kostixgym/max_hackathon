@@ -92,6 +92,10 @@ func (s *Store) IsVerifiedOwnerIn(ctx context.Context, userID, houseID string) (
 // or staff of the house's management organization. The progress holds only sums
 // in м², exactly what the company may see (решение 43).
 func (s *Store) MayViewInitiatives(ctx context.Context, userID, houseID string) (bool, error) {
+	// The house id may come from the URL: a malformed one is no house at all.
+	if _, err := resourceID(houseID); err != nil {
+		return false, nil
+	}
 	links, err := s.memberships(ctx, userID)
 	if err != nil {
 		return false, err

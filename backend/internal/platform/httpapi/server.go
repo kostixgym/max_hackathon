@@ -41,13 +41,15 @@ type Deps struct {
 	Log      *slog.Logger
 	DevMode  bool
 
-	// Stage 1: initiatives and the support poll.
-	Access       AccessChecks
-	Initiatives  InitiativeCreator
-	PollStarter  PollStarter
-	PollProgress PollProgress
-	Votes        Voter
-	DemoMembers  DemoMembership
+	// Stage 1: templates, initiatives and the support poll.
+	Access           AccessChecks
+	Templates        TemplateCatalog
+	Initiatives      InitiativeCreator
+	InitiativeReader InitiativeReader
+	PollStarter      PollStarter
+	PollProgress     PollProgress
+	Votes            Voter
+	DemoMembers      DemoMembership
 }
 
 // maxBodyBytes limits a request body: the largest one, an initiative with its
@@ -59,7 +61,8 @@ const maxBodyBytes = 64 << 10
 func NewHandler(d Deps) http.Handler {
 	h := &handlers{
 		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode,
-		access: d.Access, initiatives: d.Initiatives, pollStarter: d.PollStarter,
+		access: d.Access, templates: d.Templates, initiatives: d.Initiatives,
+		initiativeReader: d.InitiativeReader, pollStarter: d.PollStarter,
 		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers,
 	}
 
@@ -89,8 +92,12 @@ func NewHandler(d Deps) http.Handler {
 
 	// Stage 1: the support poll. :house is the invite slug for the demo shortcut (it
 	// comes from the house link) and the house id for initiatives (it comes from /me).
+	protected.GET("/templates", h.listTemplates)
+	protected.GET("/templates/:code", h.template)
 	protected.POST("/houses/:house/demo-membership", h.demoMembership)
+	protected.GET("/houses/:house/initiatives", h.listInitiatives)
 	protected.POST("/houses/:house/initiatives", h.createInitiative)
+	protected.GET("/initiatives/:id", h.initiativeCard)
 	protected.POST("/initiatives/:id/start-poll", h.startPoll)
 	protected.PUT("/initiatives/:id/my-vote", h.myVote)
 	protected.GET("/initiatives/:id/poll", h.pollProgressHandler)
@@ -121,12 +128,14 @@ type handlers struct {
 	devMode  bool
 
 	// Stage 1.
-	access       AccessChecks
-	initiatives  InitiativeCreator
-	pollStarter  PollStarter
-	pollProgress PollProgress
-	votes        Voter
-	demoMembers  DemoMembership
+	access           AccessChecks
+	templates        TemplateCatalog
+	initiatives      InitiativeCreator
+	initiativeReader InitiativeReader
+	pollStarter      PollStarter
+	pollProgress     PollProgress
+	votes            Voter
+	demoMembers      DemoMembership
 }
 
 func (h *handlers) healthz(c *gin.Context) {

@@ -38,4 +38,10 @@ func TestMalformedIDsAreNotFound(t *testing.T) {
 	if _, err := s.CreateFromTemplate(context.Background(), CreateInput{Title: "   "}); !errors.Is(err, ErrEmptyTitle) {
 		t.Fatalf("blank title: %v, want ErrEmptyTitle", err)
 	}
+	if _, err := s.Details(context.Background(), "../1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("Details: %v, want ErrNotFound", err)
+	}
+	if list, err := s.ListByHouse(context.Background(), "house-1", "0199a1b2-0000-7000-8000-000000000001"); err != nil || len(list) != 0 {
+		t.Fatalf("ListByHouse of a malformed house: %v, %v, want an empty list", list, err)
+	}
 }
