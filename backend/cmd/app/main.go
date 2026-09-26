@@ -193,7 +193,14 @@ type botNotifier interface {
 // runBot starts the chat bot and the notify worker. Problems with the MAX API
 // never stop the service: the HTTP API of the mini-app keeps working, the bot retries.
 func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, opts ...maxapi.Opt) {
-	api, err := maxapi.NewApi(token, opts...)
+	// The MAX API certificate chains to the Russian Trusted Root CA (see maxbot.HTTPClient).
+	httpClient, err := maxbot.HTTPClient()
+	if err != nil {
+		log.Error("bot: HTTP client for MAX", "err", err)
+
+		return
+	}
+	api, err := maxapi.NewApi(token, append([]maxapi.Opt{maxapi.WithHTTPClient(httpClient)}, opts...)...)
 	if err != nil {
 		log.Error("bot: create MAX client", "err", err)
 
