@@ -60,6 +60,17 @@ func openApp(t *testing.T, body model.NewMessageBody) *model.Button {
 	return btn
 }
 
+// message is a text message from user 42 in a chat of the given type.
+func message(chatType model.ChatType, text string) model.Update {
+	return model.Update{
+		UpdateType: model.UpdateMessageCreated, UserID: 42, ChatID: 7,
+		Message: &model.MessageUpdate{
+			Recipient: model.Recipient{ChatID: 7, ChatType: chatType},
+			Body:      model.MessageBody{Text: text},
+		},
+	}
+}
+
 func TestBotStartedWithHouseLink(t *testing.T) {
 	b, msgs := newBot()
 	b.Handle(context.Background(), model.Update{UpdateType: model.UpdateBotStarted, UserID: 42, ChatID: 7, Payload: "demo-slug_1"})
@@ -81,10 +92,7 @@ func TestStartWithoutOrWithUnknownLink(t *testing.T) {
 		"bot_started without payload": {UpdateType: model.UpdateBotStarted, UserID: 42, ChatID: 7},
 		"unknown slug":                {UpdateType: model.UpdateBotStarted, UserID: 42, ChatID: 7, Payload: "no-such-house"},
 		"payload not allowed by MAX":  {UpdateType: model.UpdateBotStarted, UserID: 42, ChatID: 7, Payload: "bad slug!"},
-		"/start command": {
-			UpdateType: model.UpdateMessageCreated, UserID: 42, ChatID: 7,
-			Message: &model.MessageUpdate{Body: model.MessageBody{Text: "/start"}},
-		},
+		"/start command":              message(model.ChatTypeDialog, "/start"),
 	}
 	for name, u := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -106,10 +114,7 @@ func TestStartWithoutOrWithUnknownLink(t *testing.T) {
 
 func TestStartCommandWithSlug(t *testing.T) {
 	b, msgs := newBot()
-	b.Handle(context.Background(), model.Update{
-		UpdateType: model.UpdateMessageCreated, UserID: 42, ChatID: 7,
-		Message: &model.MessageUpdate{Body: model.MessageBody{Text: "/start demo-slug_1"}},
-	})
+	b.Handle(context.Background(), message(model.ChatTypeDialog, "/start demo-slug_1"))
 	if btn := openApp(t, msgs.sent[0].body); btn.Payload != "demo-slug_1" {
 		t.Fatalf("payload = %q", btn.Payload)
 	}
@@ -117,21 +122,36 @@ func TestStartCommandWithSlug(t *testing.T) {
 
 func TestOtherMessagesGetHelp(t *testing.T) {
 	b, msgs := newBot()
-	b.Handle(context.Background(), model.Update{
-		UpdateType: model.UpdateMessageCreated, UserID: 42, ChatID: 7,
-		Message: &model.MessageUpdate{Body: model.MessageBody{Text: "привет"}},
-	})
+	b.Handle(context.Background(), message(model.ChatTypeDialog, "привет"))
 	if len(msgs.sent) != 1 || !strings.Contains(msgs.sent[0].body.Text, "Все действия") {
 		t.Fatalf("help expected, got %+v", msgs.sent)
 	}
 }
 
+// In a group chat of the house the bot must not answer the neighbours, even commands.
+func TestSilentOutsideDialogs(t *testing.T) {
+	cases := map[string]model.Update{
+		"message in a group chat":   message(model.ChatTypeChat, "привет, соседи"),
+		"/start in a group chat":    message(model.ChatTypeChat, "/start demo-slug_1"),
+		"post in a channel":         message(model.ChatTypeChannel, "объявление"),
+		"chat type is not reported": message("", "привет"),
+	}
+	for name, u := range cases {
+		t.Run(name, func(t *testing.T) {
+			b, msgs := newBot()
+			b.Handle(context.Background(), u)
+			if len(msgs.sent) != 0 {
+				t.Fatalf("sent %d messages, want 0", len(msgs.sent))
+			}
+		})
+	}
+}
+
 func TestIgnoresBotsAndOtherUpdates(t *testing.T) {
 	b, msgs := newBot()
-	b.Handle(context.Background(), model.Update{
-		UpdateType: model.UpdateMessageCreated, ChatID: 7,
-		Message: &model.MessageUpdate{Sender: model.Sender{IsBot: true}, Body: model.MessageBody{Text: "/start"}},
-	})
+	fromBot := message(model.ChatTypeDialog, "/start")
+	fromBot.Message.Sender = model.Sender{IsBot: true}
+	b.Handle(context.Background(), fromBot)
 	b.Handle(context.Background(), model.Update{UpdateType: model.UpdateDialogMuted, ChatID: 7})
 	if len(msgs.sent) != 0 {
 		t.Fatalf("sent %d messages, want 0", len(msgs.sent))

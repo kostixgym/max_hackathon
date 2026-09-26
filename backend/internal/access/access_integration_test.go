@@ -6,19 +6,30 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/platform/db"
 	"maxhackathon/backend/internal/platform/security"
 	"maxhackathon/backend/internal/registry"
 	"maxhackathon/backend/migrations"
 )
 
-// Integration test of who may see the owner directories (needs TEST_DATABASE_URL,
-// see internal/platform/db/db_test.go). Runs on the synthetic demo house.
-func TestOwnerDirectoryAccess(t *testing.T) {
+// Integration tests of the access module (need TEST_DATABASE_URL, see
+// internal/platform/db/db_test.go). They run on the synthetic demo house.
+
+// A valid id that no house or premise has.
+const unknownID = "00000000-0000-7000-8000-000000000000"
+
+// setup migrates the test database, seeds the demo house and wires the store to the
+// real registry and initiatives modules, as main does.
+func setup(t *testing.T) (context.Context, *pgxpool.Pool, *Store, registry.HouseSummary) {
+	t.Helper()
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("TEST_DATABASE_URL is not set")
@@ -46,8 +57,12 @@ func TestOwnerDirectoryAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	return ctx, pool, NewStore(pool, houses, initiatives.NewStore(pool)), house
+}
+
+func TestOwnerDirectoryAccess(t *testing.T) {
+	ctx, pool, store, house := setup(t)
 	f := newFixture(t, ctx, pool, house.ID)
-	store := NewStore(pool)
 
 	flat45 := f.premise("45")
 	guest := f.user(t, "45", "guest", "pending", false)
@@ -110,6 +125,107 @@ func TestOwnerDirectoryAccess(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("unknown premise or house is not found", func(t *testing.T) {
+		if _, err := store.PremiseOwners(ctx, staff, unknownID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("premise owners: want ErrNotFound, got %v", err)
+		}
+		if _, err := store.HouseOfficerCandidates(ctx, staff, unknownID); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("officer candidates: want ErrNotFound, got %v", err)
+		}
+	})
+}
+
+// The home page of the mini-app joins data of two modules: links (access) and
+// premises, houses, owners (registry).
+func TestMembershipsByUser(t *testing.T) {
+	ctx, pool, store, house := setup(t)
+	f := newFixture(t, ctx, pool, house.ID)
+
+	userID := f.user(t, "45", "owner", "verified", true)
+	f.link(t, userID, "46", "guest", "pending", false)
+	f.link(t, userID, "47", "resident", "revoked", false)
+
+	got, err := store.MembershipsByUser(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 links (the revoked one is hidden), got %+v", got)
+	}
+
+	owner, guest := got[0], got[1]
+	if owner.Premise.Number != "45" || owner.Role != "owner" || owner.Premise.DisplayAreaCenti == nil ||
+		owner.Premise.House.ID != house.ID || owner.Premise.House.Address != house.Address {
+		t.Fatalf("flat 45 of the demo house expected first, got %+v", owner)
+	}
+	if owner.Owner == nil || owner.Owner.PremiseNumber != "45" || owner.Owner.WeightNum <= 0 ||
+		!strings.HasSuffix(owner.Owner.MaskedName, ".") {
+		t.Fatalf("owner facts of the current version with a masked name expected, got %+v", owner.Owner)
+	}
+	if guest.Premise.Number != "46" || guest.Role != "guest" || guest.Owner != nil {
+		t.Fatalf("guest link to flat 46 without owner facts expected, got %+v", guest)
+	}
+
+	none, err := store.MembershipsByUser(ctx, f.user(t, "", "", "", false))
+	if err != nil || none == nil || len(none) != 0 {
+		t.Fatalf("user without links: want an empty list, got %v, %v", none, err)
+	}
+}
+
+// EnsureUser runs on every API request: a known user must be read, not written.
+func TestEnsureUser(t *testing.T) {
+	ctx, pool, store, _ := setup(t)
+	maxID := time.Now().UnixNano()
+	t.Cleanup(func() {
+		if _, err := pool.Exec(ctx, `DELETE FROM users WHERE max_user_id IN ($1, $2)`, maxID, maxID+1); err != nil {
+			t.Errorf("cleanup users: %v", err)
+		}
+	})
+
+	first, err := store.EnsureUser(ctx, maxID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	version := rowVersion(t, ctx, pool, first.ID)
+
+	again, err := store.EnsureUser(ctx, maxID)
+	if err != nil || again.ID != first.ID {
+		t.Fatalf("second visit: got %q, %v; want the same user %q", again.ID, err, first.ID)
+	}
+	if v := rowVersion(t, ctx, pool, first.ID); v != version {
+		t.Fatalf("the row of a known user was rewritten: xmin %s -> %s", version, v)
+	}
+
+	// Parallel first requests of a new user (the mini-app loads several screens at once).
+	const n = 8
+	ids := make([]string, n)
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			u, err := store.EnsureUser(ctx, maxID+1)
+			ids[i], errs[i] = u.ID, err
+		})
+	}
+	wg.Wait()
+	for i := range n {
+		if errs[i] != nil || ids[i] != ids[0] {
+			t.Fatalf("parallel first visits must end with one user: ids %v, errors %v", ids, errs)
+		}
+	}
+}
+
+// rowVersion returns xmin of the user's row: it changes whenever the row is written.
+func rowVersion(t *testing.T, ctx context.Context, pool *pgxpool.Pool, userID string) string {
+	t.Helper()
+
+	var xmin string
+	if err := pool.QueryRow(ctx, `SELECT xmin::text FROM users WHERE id = $1::uuid`, userID).Scan(&xmin); err != nil {
+		t.Fatal(err)
+	}
+
+	return xmin
 }
 
 // fixture creates users, links and initiatives on the demo house and removes them
@@ -144,7 +260,6 @@ func (f *fixture) premise(number string) string {
 }
 
 // user creates a user; with a flat number it also links the user to the flat.
-// withOwner links an owner membership to a free owner of the flat.
 func (f *fixture) user(t *testing.T, flat, role, status string, withOwner bool) string {
 	t.Helper()
 
@@ -156,9 +271,17 @@ func (f *fixture) user(t *testing.T, flat, role, status string, withOwner bool) 
 		t.Fatal(err)
 	}
 	f.users = append(f.users, userID)
-	if flat == "" {
-		return userID
+	if flat != "" {
+		f.link(t, userID, flat, role, status, withOwner)
 	}
+
+	return userID
+}
+
+// link links the user to the flat. withOwner links an owner membership to a free
+// owner of the flat.
+func (f *fixture) link(t *testing.T, userID, flat, role, status string, withOwner bool) {
+	t.Helper()
 
 	var ownerID *string
 	if withOwner {
@@ -181,8 +304,6 @@ func (f *fixture) user(t *testing.T, flat, role, status string, withOwner bool) 
 		userID, f.premise(flat), ownerID, role, status); err != nil {
 		t.Fatal(err)
 	}
-
-	return userID
 }
 
 func (f *fixture) staff(t *testing.T) string {

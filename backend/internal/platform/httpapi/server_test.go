@@ -69,7 +69,7 @@ func launch(maxID int64, authAt time.Time, startParam string) map[string]string 
 
 type fakeUsers struct{ seen map[int64]bool }
 
-func (f *fakeUsers) UpsertUser(_ context.Context, maxID int64) (access.User, error) {
+func (f *fakeUsers) EnsureUser(_ context.Context, maxID int64) (access.User, error) {
 	f.seen[maxID] = true
 
 	return access.User{ID: fmt.Sprintf("user-%d", maxID), MaxUserID: maxID}, nil
@@ -96,8 +96,10 @@ func (fakeProfiles) MembershipsByUser(_ context.Context, userID string) ([]acces
 	area := int64(5230)
 	return []access.MembershipSummary{{
 		ID: "membership-1", Role: "owner", Status: "verified", Method: &method,
-		House:   access.HouseRef{ID: "house-demo", InviteSlug: "demo-slug", Address: "демо", IsDemo: true},
-		Premise: access.PremiseRef{ID: "premise-45", Number: "45", Kind: "residential", DisplayAreaCenti: &area},
+		Premise: registry.Premise{
+			ID: "premise-45", Number: "45", Kind: "residential", DisplayAreaCenti: &area,
+			House: registry.HouseRef{ID: "house-demo", InviteSlug: "demo-slug", Address: "демо", IsDemo: true},
+		},
 		Owner: &access.OwnerSummary{
 			ID: "owner-1", PremiseID: "premise-45", PremiseNumber: "45", MaskedName: "Иванов И. И.",
 			Kind: "person", ShareNum: 1, ShareDen: 2, WeightNum: 5230, WeightDen: 2,
@@ -172,7 +174,7 @@ func TestMeWithValidInitData(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
 	if !users.seen[42] {
-		t.Fatal("user must be upserted by MAX id")
+		t.Fatal("user must be found or created by MAX id")
 	}
 
 	var resp struct {

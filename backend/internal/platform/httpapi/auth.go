@@ -45,9 +45,9 @@ func IdentityFrom(c *gin.Context) (Identity, bool) {
 	return id, ok
 }
 
-// Users creates or finds users by MAX id (the access module).
+// Users finds users by MAX id and creates them on the first visit (the access module).
 type Users interface {
-	UpsertUser(ctx context.Context, maxUserID int64) (access.User, error)
+	EnsureUser(ctx context.Context, maxUserID int64) (access.User, error)
 }
 
 // Authenticator checks every API request.
@@ -74,9 +74,9 @@ func (a *Authenticator) Middleware() gin.HandlerFunc {
 			return
 		}
 
-		u, err := a.Users.UpsertUser(c.Request.Context(), id.MaxUserID)
+		u, err := a.Users.EnsureUser(c.Request.Context(), id.MaxUserID)
 		if err != nil {
-			a.Log.Error("upsert user", "err", err)
+			a.Log.Error("ensure user", "err", err)
 			writeError(c, http.StatusInternalServerError, "internal", "Не удалось обработать запрос, попробуйте ещё раз")
 			c.Abort()
 

@@ -129,11 +129,12 @@ func (h *handlers) writeOwnerDirectoryError(c *gin.Context, err error, resource 
 }
 
 func toMembershipJSON(m access.MembershipSummary) membershipJSON {
+	house := m.Premise.House
 	result := membershipJSON{
 		ID: m.ID, Role: m.Role, Status: m.Status, Method: m.Method,
 		House: membershipHouseJSON{
-			ID: m.House.ID, Slug: m.House.InviteSlug, Address: m.House.Address,
-			Region: m.House.Region, IsDemo: m.House.IsDemo,
+			ID: house.ID, Slug: house.InviteSlug, Address: house.Address,
+			Region: house.Region, IsDemo: house.IsDemo,
 		},
 		Premise: membershipPremiseJSON{
 			ID: m.Premise.ID, Number: m.Premise.Number, Kind: m.Premise.Kind,
