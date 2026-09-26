@@ -1,0 +1,213 @@
+package access
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"os"
+	"testing"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"maxhackathon/backend/internal/platform/db"
+	"maxhackathon/backend/internal/platform/security"
+	"maxhackathon/backend/internal/registry"
+	"maxhackathon/backend/migrations"
+)
+
+// Integration test of who may see the owner directories (needs TEST_DATABASE_URL,
+// see internal/platform/db/db_test.go). Runs on the synthetic demo house.
+func TestOwnerDirectoryAccess(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("TEST_DATABASE_URL is not set")
+	}
+
+	ctx := context.Background()
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	pool, err := db.Connect(ctx, url, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cleanups run in reverse order: the pool closes after the fixture has removed its rows.
+	t.Cleanup(pool.Close)
+	if err := db.Migrate(ctx, pool, migrations.FS, log); err != nil {
+		t.Fatal(err)
+	}
+
+	houses := registry.NewStore(pool)
+	slug, err := houses.SeedDemo(ctx, security.NewHasher([]byte("test-secret-test-secret-test-secret")), "", log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	house, err := houses.HouseBySlug(ctx, slug)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f := newFixture(t, ctx, pool, house.ID)
+	store := NewStore(pool)
+
+	flat45 := f.premise("45")
+	guest := f.user(t, "45", "guest", "pending", false)
+	resident := f.user(t, "45", "resident", "verified", false)
+	ownerPending := f.user(t, "44", "owner", "pending", true)
+	owner45 := f.user(t, "45", "owner", "verified", true)
+	staff := f.staff(t)
+	outsider := f.user(t, "", "", "", false)
+
+	premiseCases := []struct {
+		name    string
+		userID  string
+		premise string
+		allowed bool
+	}{
+		{"guest of the flat is refused (anyone can claim any flat)", guest, flat45, false},
+		{"verified resident of the flat", resident, flat45, true},
+		{"verified owner of the flat", owner45, flat45, true},
+		{"pending owner of their own flat", ownerPending, f.premise("44"), true},
+		{"pending owner of another flat is refused", ownerPending, flat45, false},
+		{"management company staff", staff, flat45, true},
+		{"user without links", outsider, flat45, false},
+	}
+	for _, c := range premiseCases {
+		t.Run("premise owners: "+c.name, func(t *testing.T) {
+			owners, err := store.PremiseOwners(ctx, c.userID, c.premise)
+			if c.allowed && (err != nil || len(owners) == 0) {
+				t.Fatalf("want owners, got %d, %v", len(owners), err)
+			}
+			if !c.allowed && !errors.Is(err, ErrForbidden) {
+				t.Fatalf("want ErrForbidden, got %v", err)
+			}
+		})
+	}
+
+	initiatorB := f.user(t, "2", "owner", "verified", true)
+	f.initiative(t, initiatorB, "B")
+	initiatorA := f.user(t, "3", "owner", "verified", true)
+	f.initiative(t, initiatorA, "A")
+
+	houseCases := []struct {
+		name    string
+		userID  string
+		allowed bool
+	}{
+		{"verified owner who organizes nothing is refused", owner45, false},
+		{"initiator of an active path-B initiative", initiatorB, true},
+		{"initiator of a path-A initiative is refused (the company organizes)", initiatorA, false},
+		{"management company staff", staff, true},
+		{"verified resident is refused", resident, false},
+	}
+	for _, c := range houseCases {
+		t.Run("officer candidates: "+c.name, func(t *testing.T) {
+			owners, err := store.HouseOfficerCandidates(ctx, c.userID, house.ID)
+			if c.allowed && (err != nil || len(owners) == 0) {
+				t.Fatalf("want candidates, got %d, %v", len(owners), err)
+			}
+			if !c.allowed && !errors.Is(err, ErrForbidden) {
+				t.Fatalf("want ErrForbidden, got %v", err)
+			}
+		})
+	}
+}
+
+// fixture creates users, links and initiatives on the demo house and removes them
+// after the test, so the test can run again against the same database.
+type fixture struct {
+	ctx     context.Context
+	pool    *pgxpool.Pool
+	houseID string
+	users   []string
+}
+
+func newFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool, houseID string) *fixture {
+	f := &fixture{ctx: ctx, pool: pool, houseID: houseID}
+	t.Cleanup(func() {
+		// Memberships and staff links go with the users (ON DELETE CASCADE).
+		if _, err := pool.Exec(ctx, `DELETE FROM initiatives WHERE initiator_user_id = ANY($1::uuid[])`, f.users); err != nil {
+			t.Errorf("cleanup initiatives: %v", err)
+		}
+		if _, err := pool.Exec(ctx, `DELETE FROM users WHERE id = ANY($1::uuid[])`, f.users); err != nil {
+			t.Errorf("cleanup users: %v", err)
+		}
+	})
+
+	return f
+}
+
+func (f *fixture) premise(number string) string {
+	var id string
+	_ = f.pool.QueryRow(f.ctx, `SELECT id::text FROM premises WHERE house_id = $1 AND number = $2`, f.houseID, number).Scan(&id)
+
+	return id
+}
+
+// user creates a user; with a flat number it also links the user to the flat.
+// withOwner links an owner membership to a free owner of the flat.
+func (f *fixture) user(t *testing.T, flat, role, status string, withOwner bool) string {
+	t.Helper()
+
+	var userID string
+	if err := f.pool.QueryRow(f.ctx, `
+		INSERT INTO users (max_user_id)
+		VALUES ((SELECT coalesce(max(max_user_id), 1000) + 1 FROM users)) RETURNING id::text`,
+	).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	f.users = append(f.users, userID)
+	if flat == "" {
+		return userID
+	}
+
+	var ownerID *string
+	if withOwner {
+		var id string
+		// An owner of the flat without a verified link yet (invariant 9).
+		if err := f.pool.QueryRow(f.ctx, `
+			SELECT o.id::text FROM owners o
+			WHERE o.premise_id = $1
+			  AND NOT EXISTS (SELECT 1 FROM memberships m
+			                  WHERE m.owner_id = o.id AND m.status = 'verified')
+			ORDER BY o.id LIMIT 1`, f.premise(flat)).Scan(&id); err != nil {
+			t.Fatalf("free owner of flat %s: %v", flat, err)
+		}
+		ownerID = &id
+	}
+
+	if _, err := f.pool.Exec(f.ctx, `
+		INSERT INTO memberships (user_id, premise_id, owner_id, role, method, status)
+		VALUES ($1, $2, $3, $4, 'demo', $5)`,
+		userID, f.premise(flat), ownerID, role, status); err != nil {
+		t.Fatal(err)
+	}
+
+	return userID
+}
+
+func (f *fixture) staff(t *testing.T) string {
+	t.Helper()
+
+	userID := f.user(t, "", "", "", false)
+	if _, err := f.pool.Exec(f.ctx, `
+		INSERT INTO org_members (user_id, org_id, role)
+		SELECT $1, org_id, 'operator' FROM houses WHERE id = $2`, userID, f.houseID); err != nil {
+		t.Fatal(err)
+	}
+
+	return userID
+}
+
+func (f *fixture) initiative(t *testing.T, initiatorID, path string) {
+	t.Helper()
+
+	if _, err := f.pool.Exec(f.ctx, `
+		INSERT INTO initiatives (house_id, title, stage, path, registry_upload_id, poll_ends_at,
+		                         initiator_user_id, author_user_id)
+		SELECT h.id, 'Камеры в подъезде', 'poll', $2, ru.id, now() + interval '7 days', $3, $3
+		FROM houses h
+		JOIN registry_uploads ru ON ru.house_id = h.id AND ru.version = h.current_registry_version
+		WHERE h.id = $1`, f.houseID, path, initiatorID); err != nil {
+		t.Fatal(err)
+	}
+}
