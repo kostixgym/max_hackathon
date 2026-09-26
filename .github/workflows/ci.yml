@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    name: backend (vet, tests incl. PostgreSQL 18)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      # Enables the integration tests (migrations, invariants, demo seed, access rules).
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test ./... -count=1
+
+  docker:
+    name: docker compose build (≤ 5 min)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Pull base images (not counted in the 5-minute limit)
+        run: |
+          docker pull -q golang:1.27-alpine
+          docker pull -q gcr.io/distroless/static-debian12:nonroot
+          docker pull -q caddy:2-alpine
+      - name: Build all images
+        run: |
+          cp .env.example .env
+          start=$(date +%s)
+          timeout 300 docker compose build
+          echo "build took $(( $(date +%s) - start ))s"
