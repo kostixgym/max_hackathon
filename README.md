@@ -10,7 +10,7 @@
 > - инициатива по шаблону, опрос поддержки в м², очередь рассылок.
 >
 > Требование в УК, собрание и протокол — следующие шаги этапа 1. Мини-приложение пока заглушка.
-> План и журнал: [docs/05-plan-realizacii.md](docs/05-plan-realizacii.md), [docs/completed/](docs/completed/README.md).
+> Что сделано и что дальше — [docs/status.md](docs/status.md). План и журнал: [docs/05-plan-realizacii.md](docs/05-plan-realizacii.md), [docs/completed/](docs/completed/README.md).
 
 ## Назначение
 
