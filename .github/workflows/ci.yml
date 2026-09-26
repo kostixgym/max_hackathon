@@ -28,7 +28,9 @@ jobs:
           --health-retries 30
     env:
       # Enables the integration tests (migrations, invariants, demo seed, access rules).
-      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
+      # A pool of two connections: code that asks the pool for a second connection while it
+      # holds a transaction deadlocks under concurrency, and a small pool shows it at once.
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/postgres?sslmode=disable&pool_max_conns=2
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -40,8 +42,9 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go test
-        # -race: the worker and the bot poller run concurrently with the API.
-        run: go test ./... -race -count=1
+        # -race: the worker and the bot poller run concurrently with the API. A hang fails
+        # the step in minutes instead of holding the runner for hours.
+        run: go test ./... -race -count=1 -timeout 5m
 
   docker:
     name: docker compose build (≤ 5 min)

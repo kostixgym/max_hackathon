@@ -214,7 +214,9 @@
 Маршруты ниже составляют минимальный контракт для сценария
 «привязка к дому → инициатива → опрос → выбор пути A/B → собрание → итог».
 Реализованные помечены **«Реализовано»**, у остальных контракт ещё может уточняться. Ошибки всегда приходят в общем формате
-`{"error": {"code": "…", "message": "…"}}`. Тело запроса — не больше 64 КБ, иначе `413 request_too_large`.
+`{"error": {"code": "…", "message": "…"}}`. Ошибка в одном поле формы дополнительно называет его:
+`{"error": {"code": "invalid_params", "message": "Заполните поле «Количество камер»", "field": "camera_count"}}`.
+`message` можно показывать пользователю как есть. Тело запроса — не больше 64 КБ, иначе `413 request_too_large`.
 
 В документах идея жителя называется `Initiative`, поэтому API использует `/initiatives`, а не
 `/issues`. Отдельная заявка в УК с фотографией (`IssueReport`) находится вне текущего MVP.
@@ -300,15 +302,29 @@
 
 ### `GET /api/v1/templates`
 
-Возвращает доступные шаблоны инициатив, минимум — «Видеонаблюдение».
+**Реализовано.** Возвращает последние версии шаблонов инициатив. В MVP шаблон один — «Видеонаблюдение». Шаблоны — данные
+платформы без персональных данных, их видит любой вошедший пользователь.
 
 **Request body:** отсутствует.
 
-**Response `200 OK`:** список `{code, name, version}`.
+**Response `200 OK`:**
+
+```json
+{
+  "templates": [
+    {
+      "code": "video_surveillance",
+      "name": "Видеонаблюдение",
+      "version": 1,
+      "description": "Камеры в подъездах: где ставим, кто хранит записи, как оплачиваем."
+    }
+  ]
+}
+```
 
 ### `GET /api/v1/templates/{code}`
 
-Возвращает поля формы шаблона, вопросы повестки и правила большинства.
+**Реализовано.** Возвращает форму шаблона, вопросы повестки и правила большинства.
 
 **Request body:** отсутствует.
 
@@ -319,45 +335,112 @@
   "code": "video_surveillance",
   "name": "Видеонаблюдение",
   "version": 1,
+  "description": "Камеры в подъездах: где ставим, кто хранит записи, как оплачиваем.",
   "params_schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "type": "object",
     "additionalProperties": false,
     "required": ["camera_count", "payment_method"],
     "properties": {
-      "camera_count": {
+      "placement": {
+        "type": "string",
+        "title": "Где ставим камеры",
+        "description": "Например: входы в подъезды, лифтовые холлы, детская площадка",
+        "maxLength": 300
+      },
+      "camera_count": {"type": "integer", "title": "Количество камер", "minimum": 1, "maximum": 1000},
+      "estimated_cost_rub": {
         "type": "integer",
-        "title": "Количество камер",
-        "minimum": 1,
-        "maximum": 1000
+        "title": "Ориентир по стоимости, ₽",
+        "description": "Оборудование и монтаж по предварительной оценке",
+        "minimum": 0,
+        "maximum": 100000000
       },
       "payment_method": {
         "type": "string",
         "title": "Способ оплаты",
         "enum": ["management_bill", "special_assessment"]
+      },
+      "records_access": {
+        "type": "string",
+        "title": "Кто имеет доступ к записям",
+        "enum": ["management_company", "contractor", "house_council"]
       }
     }
   },
   "ui_schema": {
-    "order": ["camera_count", "payment_method"],
-    "widgets": {"payment_method": "select"}
+    "order": ["placement", "camera_count", "estimated_cost_rub", "payment_method", "records_access"],
+    "widgets": {"placement": "textarea", "payment_method": "select", "records_access": "select"},
+    "enum_titles": {
+      "payment_method": {
+        "management_bill": "Строкой в квитанции УК",
+        "special_assessment": "Разовым целевым сбором"
+      },
+      "records_access": {
+        "management_company": "Управляющая компания",
+        "contractor": "Подрядчик, который обслуживает камеры",
+        "house_council": "Председатель совета дома"
+      }
+    }
   },
-  "agenda_items": []
+  "agenda_items": [
+    {
+      "position": 1,
+      "text": "Избрать председателя и секретаря общего собрания и наделить их полномочиями по подсчёту голосов",
+      "majority_rule": "majority_of_participants",
+      "legal_reference": "ЖК РФ, ст. 46 ч. 1"
+    },
+    {
+      "position": 2,
+      "text": "Установить видеонаблюдение в подъездах дома (монтаж, хранение записей и оплата — по проекту, приложенному к материалам собрания)",
+      "majority_rule": "two_thirds_of_all",
+      "legal_reference": "ЖК РФ, ч. 1 ст. 46, п. 3 ч. 2 ст. 44"
+    }
+  ]
 }
 ```
 
-`params_schema` — JSON Schema Draft 2020-12. В MVP фронтенд обязан поддержать `string`, `integer`,
-`number`, `boolean`, `enum`, `required`, `minimum`, `maximum`, `minLength` и `maxLength`.
-`ui_schema` влияет только на отображение и не участвует в серверной валидации. Значения `params` при
-создании или изменении инициативы сервер валидирует по `params_schema` сохранённой версии шаблона.
+**Форма.** `params_schema` — JSON Schema Draft 2020-12 в объёме, который обязан поддержать фронтенд: плоские поля типов
+`string`, `integer`, `number`, `boolean` и ключевые слова `title`, `description`, `enum`, `required`, `minimum`, `maximum`,
+`minLength`, `maxLength`. Сервер отказывается загружать шаблон с другими ключевыми словами, поэтому неизвестного фронтенду
+поля не будет.
+
+**Отображение.** `ui_schema` влияет только на отображение и не участвует в проверке:
+- `order` — порядок полей;
+- `widgets` — вид поля, если он отличается от обычного: `textarea` — многострочный текст, `select` — выпадающий список;
+- `enum_titles` — подписи значений `enum`. Отправлять нужно само значение (`management_bill`), а не подпись.
+
+**Значения.** Необязательное поле без значения в `params` не передаётся: `null` — ошибка. Значения `params` сервер
+проверяет по `params_schema` той версии шаблона, по которой создаётся инициатива.
+
+**Ошибки:** `404 template_not_found`.
 
 ### `GET /api/v1/houses/{houseID}/initiatives`
 
-Возвращает инициативы дома, доступные текущему подтверждённому пользователю.
+**Реализовано.** Возвращает инициативы дома, новые сверху, не больше 100. Список видят подтверждённые жители дома и
+сотрудники его УК. Черновик видят только его инициатор и автор (решение 76 в 04), остальным инициатива видна с запуска опроса.
 
 **Request body:** отсутствует.
 
-**Response `200 OK`:** список `{id, title, stage, path, poll_ends_at, created_at}`.
+**Response `200 OK`:**
+
+```json
+{
+  "initiatives": [
+    {
+      "id": "0199...",
+      "title": "Камеры в подъездах",
+      "stage": "poll",
+      "path": null,
+      "poll_ends_at": "2026-10-03T18:00:00+03:00",
+      "created_at": "2026-09-26T18:00:00+03:00",
+      "is_initiator": false
+    }
+  ]
+}
+```
+
+**Ошибки:** `403 not_member` — пользователь не подтверждён в этом доме (неверный `houseID` — тоже `403`).
 
 ### `POST /api/v1/houses/{houseID}/initiatives`
 
@@ -366,7 +449,8 @@
 
 **Реализовано для собственника.** Черновик жителя — позже. В MVP есть один шаблон: `video_surveillance`. Повестка
 начинается с процедурного вопроса об избрании председателя и секретаря, потом идёт вопрос о видеонаблюдении.
-`params` сохраняются как есть: у шаблонов MVP пустая схема. Один пользователь создаёт не больше 10 инициатив за сутки.
+`params` проверяются по форме шаблона (`GET /templates/{code}`), для «Видеонаблюдения» обязательны `camera_count` и
+`payment_method`. Один пользователь создаёт не больше 10 инициатив за сутки.
 
 **Request body:**
 
@@ -395,8 +479,10 @@
   "is_initiator": true,
   "registry_version": 1,
   "agenda_items": [
-    {"position": 1, "text": "Избрать председателя и секретаря…", "majority_rule": "majority_of_participants"},
-    {"position": 2, "text": "Установить видеонаблюдение…", "majority_rule": "two_thirds_of_all"}
+    {"position": 1, "text": "Избрать председателя и секретаря…", "majority_rule": "majority_of_participants",
+     "legal_reference": "ЖК РФ, ст. 46 ч. 1"},
+    {"position": 2, "text": "Установить видеонаблюдение…", "majority_rule": "two_thirds_of_all",
+     "legal_reference": "ЖК РФ, ч. 1 ст. 46, п. 3 ч. 2 ст. 44"}
   ]
 }
 ```
@@ -404,7 +490,9 @@
 `is_initiator` означает, что текущий пользователь — инициатор.
 
 **Ошибки:**
-- `400 invalid_request` — пустое название или неверные поля;
+- `400 invalid_request` — пустое название или неверные поля запроса;
+- `400 invalid_params` — значения формы не подходят к шаблону. `error.field` называет поле, `message` объясняет, что не так,
+  например `Поле «Количество камер»: значение не больше 1000`. Без `field` — `params` не объект;
 - `403 not_owner`;
 - `404 template_not_found`;
 - `409 no_registry` — у дома нет применённой версии реестра;
@@ -412,7 +500,9 @@
 
 ### `GET /api/v1/initiatives/{id}`
 
-Возвращает карточку инициативы, повестку, стадию, пороги и разрешённые текущему пользователю действия.
+**Реализовано.** Возвращает карточку инициативы: поля, форму шаблона со значениями, повестку, пороги, голос текущего
+пользователя и разрешённые ему действия. Карточку видят подтверждённые жители дома и сотрудники его УК, черновик — только
+его инициатор и автор.
 
 **Request body:** отсутствует.
 
@@ -421,31 +511,72 @@
 ```json
 {
   "id": "0199...",
+  "house_id": "0199...",
   "title": "Камеры в подъездах",
   "description": "Установить камеры во всех подъездах",
   "stage": "poll",
   "path": null,
-  "agenda_items": [],
-  "thresholds": {},
+  "poll_ends_at": "2026-10-03T18:00:00+03:00",
+  "created_at": "2026-09-26T18:00:00+03:00",
+  "is_initiator": false,
+  "template": {"code": "video_surveillance", "name": "Видеонаблюдение", "version": 1},
+  "params": {"camera_count": 6, "payment_method": "management_bill"},
+  "registry_version": 1,
+  "total_area_m2": "3000.00",
+  "thresholds": {"demand_m2": "300.00", "quorum_above_m2": "1500.00", "two_thirds_m2": "2000.00"},
+  "agenda_items": [
+    {"position": 1, "text": "Избрать председателя и секретаря…", "majority_rule": "majority_of_participants",
+     "legal_reference": "ЖК РФ, ст. 46 ч. 1"},
+    {"position": 2, "text": "Установить видеонаблюдение…", "majority_rule": "two_thirds_of_all",
+     "legal_reference": "ЖК РФ, ч. 1 ст. 46, п. 3 ч. 2 ст. 44"}
+  ],
+  "my_vote": {
+    "choice": "for",
+    "weight_m2": "17.25",
+    "official_channel": "paper",
+    "willing_to_help": true,
+    "updated_at": "2026-09-26T18:05:00+03:00"
+  },
   "allowed_actions": [
-    {"code": "edit", "allowed": false, "reason_code": "poll_already_started"},
-    {"code": "start_poll", "allowed": false, "reason_code": "poll_already_started"},
+    {"code": "edit", "allowed": false, "reason_code": "not_implemented"},
+    {"code": "start_poll", "allowed": false, "reason_code": "not_initiator"},
     {"code": "cast_poll_vote", "allowed": true},
-    {"code": "select_path_a", "allowed": false, "reason_code": "support_not_reached"},
-    {"code": "select_path_b", "allowed": true},
-    {"code": "create_meeting", "allowed": false, "reason_code": "path_not_selected"},
-    {"code": "cancel", "allowed": true}
+    {"code": "select_path_a", "allowed": false, "reason_code": "not_implemented"},
+    {"code": "select_path_b", "allowed": false, "reason_code": "not_implemented"},
+    {"code": "create_meeting", "allowed": false, "reason_code": "not_implemented"},
+    {"code": "cancel", "allowed": false, "reason_code": "not_implemented"}
   ]
 }
 ```
 
-`allowed_actions` всегда содержит все известные клиенту действия. Фронтенд определяет состояние
-кнопки только по `code` и `allowed`; отображаемый текст локализуется на фронтенде. `reason_code` —
-необязательный стабильный машинный код причины запрета. Допустимые коды действий:
-`edit`, `start_poll`, `cast_poll_vote`, `select_path_a`, `select_path_b`, `create_meeting`, `cancel`.
-Первоначальные коды причин: `owner_verification_required`, `not_initiator`, `wrong_stage`,
-`poll_already_started`, `poll_not_finished`, `support_not_reached`, `path_not_selected`,
-`active_meeting_exists`. Сервер всё равно повторно проверяет право при выполнении действия.
+- `params` показываются по форме шаблона: подписи полей — из `GET /templates/{template.code}`.
+- Пороги и `total_area_m2` считаются от снимка реестра инициативы (`registry_version`), а не от текущего реестра.
+- `my_vote` — голос текущего пользователя в опросе, `null`, если он не голосовал. Если у пользователя несколько квартир,
+  `weight_m2` — сумма по ним.
+
+**Действия.** `allowed_actions` всегда содержит все известные клиенту действия в одном порядке. Фронтенд определяет
+состояние кнопки только по `code` и `allowed`, отображаемый текст локализуется на фронтенде. `reason_code` — стабильный
+машинный код причины запрета, у разрешённого действия его нет. Сервер всё равно повторно проверяет право при выполнении
+действия.
+
+Коды действий: `edit`, `start_poll`, `cast_poll_vote`, `select_path_a`, `select_path_b`, `create_meeting`, `cancel`.
+
+Сейчас работают два правила:
+- `start_poll` — инициатор, черновик. Иначе `not_initiator`, `poll_already_started` или `wrong_stage` (инициатива отменена);
+- `cast_poll_vote` — идёт опрос, срок не вышел, пользователь — подтверждённый собственник. Иначе `wrong_stage`,
+  `poll_finished` (срок вышел, решение 77) или `owner_verification_required`.
+
+Остальные действия пока приходят с причиной `not_implemented`: их ручки появятся в шагах 1.4–1.6, и кнопка включится
+без изменений на фронтенде. Такую кнопку фронтенд прячет или показывает неактивной с подписью «скоро».
+
+Коды причин: `owner_verification_required`, `not_initiator`, `wrong_stage`, `poll_already_started`, `poll_finished`,
+`not_implemented`.
+Зарезервированы для следующих шагов: `poll_not_finished`, `support_not_reached`, `path_not_selected`,
+`active_meeting_exists`.
+
+**Ошибки:**
+- `404 initiative_not_found` — нет такой инициативы или это чужой черновик;
+- `403 not_member` — пользователь не подтверждён в доме инициативы.
 
 ### `POST /api/v1/initiatives/{id}/start-poll`
 
@@ -456,6 +587,7 @@
 - Приглашения с кнопками голосования приходят в чат с ботом.
 - В тихие часы (22:00–9:00 по часовому поясу дома) рассылка ждёт утра.
 - В демо-доме приглашение уходит только инициатору.
+- По окончании срока голоса больше не принимаются, а инициатор получает итог в чат (решение 77).
 
 **Request body:**
 
@@ -505,14 +637,15 @@
 - `400 invalid_request`;
 - `403 not_owner`;
 - `404 initiative_not_found`;
-- `409 poll_closed`;
+- `409 poll_closed` — опрос завершён: вышел срок или инициатива ушла дальше;
 - `409 not_in_snapshot` — записи собственника нет в версии реестра инициативы.
 
 ### `GET /api/v1/initiatives/{id}/poll`
 
 Возвращает прогресс предварительного опроса в м² без раскрытия чужих вариантов голосования.
 
-**Реализовано.** Прогресс видят подтверждённые жители дома и сотрудники его УК, остальным — `403 not_member`.
+**Реализовано.** Прогресс видят подтверждённые жители дома и сотрудники его УК, остальным — `403 not_member`. Чужой
+черновик — `404 initiative_not_found`, как в карточке.
 
 **Request body:** отсутствует.
 

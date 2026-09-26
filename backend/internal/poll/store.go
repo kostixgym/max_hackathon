@@ -122,7 +122,8 @@ func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) 
 	if err != nil {
 		return CastResult{}, err
 	}
-	if initiative.Stage != "poll" {
+	// The poll takes votes on its stage and until its term (решения 3, 77).
+	if !initiative.Open(time.Now()) {
 		return CastResult{}, fmt.Errorf("%w: stage %s", ErrPollClosed, initiative.Stage)
 	}
 
@@ -206,6 +207,56 @@ func (s *Store) CastVote(ctx context.Context, in CastInput) (CastResult, error) 
 	result.WeightNum, result.WeightDen = fraction(total)
 
 	return result, nil
+}
+
+// MyVote is the vote of one user as the card of the initiative shows it.
+type MyVote struct {
+	Choice          string
+	WeightNum       int64 // hundredths of м² as an exact fraction Num/Den
+	WeightDen       int64
+	OfficialChannel string // "" when not answered
+	WillingToHelp   bool
+	UpdatedAt       time.Time
+}
+
+// MyVote returns the vote the user cast in the poll; false when there is none. A user
+// with several premises has a row per owner record, written together: the weights sum.
+// The vote is found by who cast it, so a vote that still counts is shown even after
+// the user's owner link has changed.
+func (s *Store) MyVote(ctx context.Context, initiativeID, userID string) (MyVote, bool, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT choice, weight_num, weight_den, coalesce(official_channel, ''), willing_to_help, updated_at
+		FROM poll_votes
+		WHERE initiative_id = $1::uuid AND user_id = $2::uuid
+		ORDER BY updated_at DESC, id`, initiativeID, userID)
+	if err != nil {
+		return MyVote{}, false, fmt.Errorf("my vote: %w", err)
+	}
+	defer rows.Close()
+
+	var vote MyVote
+	found := false
+	total := new(big.Rat)
+	for rows.Next() {
+		var v MyVote
+		if err := rows.Scan(&v.Choice, &v.WeightNum, &v.WeightDen, &v.OfficialChannel, &v.WillingToHelp,
+			&v.UpdatedAt); err != nil {
+			return MyVote{}, false, fmt.Errorf("scan my vote: %w", err)
+		}
+		if !found {
+			vote, found = v, true // the latest row
+		}
+		total.Add(total, new(big.Rat).SetFrac64(v.WeightNum, v.WeightDen))
+	}
+	if err := rows.Err(); err != nil {
+		return MyVote{}, false, fmt.Errorf("my vote: %w", err)
+	}
+	if !found {
+		return MyVote{}, false, nil
+	}
+	vote.WeightNum, vote.WeightDen = fraction(total)
+
+	return vote, true, nil
 }
 
 // Progress is the live poll dashboard (решение 65: computed on the fly).

@@ -19,6 +19,12 @@ const (
 	// TypePollInvite sends the support-poll message with voting buttons
 	// to one verified owner.
 	TypePollInvite = "poll_invite"
+	// TypePollFinished sends the result of the poll to the initiator when its term ends.
+	TypePollFinished = "poll_finished"
+	// TypeQuestionAsked relays a neighbour's question to the initiator.
+	TypeQuestionAsked = "question_asked"
+	// TypeQuestionAnswered relays the initiator's answer to the neighbour who asked.
+	TypeQuestionAnswered = "question_answered"
 )
 
 // Job is one unit of background work.

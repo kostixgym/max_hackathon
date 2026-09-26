@@ -49,6 +49,22 @@ func (s *Store) CurrentSnapshot(ctx context.Context, houseID string) (Snapshot, 
 	return snap, nil
 }
 
+// Snapshot returns the registry version with the given upload id.
+func (s *Store) Snapshot(ctx context.Context, uploadID string) (Snapshot, error) {
+	snap := Snapshot{UploadID: uploadID}
+	err := s.pool.QueryRow(ctx,
+		`SELECT version, total_area_centi FROM registry_uploads WHERE id = $1::uuid`, uploadID,
+	).Scan(&snap.Version, &snap.TotalAreaCenti)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return snap, ErrNotFound
+	}
+	if err != nil {
+		return snap, fmt.Errorf("snapshot: %w", err)
+	}
+
+	return snap, nil
+}
+
 // SnapshotTotal returns the total area of the given snapshot in hundredths of м².
 func (s *Store) SnapshotTotal(ctx context.Context, uploadID string) (int64, error) {
 	var total int64

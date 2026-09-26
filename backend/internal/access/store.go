@@ -113,6 +113,25 @@ func (s *Store) EnsureUser(ctx context.Context, maxUserID int64) (User, error) {
 	return u, nil
 }
 
+// MaxUserID returns the MAX id of the user: the bot writes to them by it. ErrNotFound
+// means the account is deleted (решение 28).
+func (s *Store) MaxUserID(ctx context.Context, userID string) (int64, error) {
+	id, err := resourceID(userID)
+	if err != nil {
+		return 0, err
+	}
+	var maxUserID int64
+	err = s.pool.QueryRow(ctx, `SELECT max_user_id FROM users WHERE id = $1::uuid`, id).Scan(&maxUserID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("max user id: %w", err)
+	}
+
+	return maxUserID, nil
+}
+
 // MembershipsByUser returns all of the user's non-revoked links together with
 // the premise, its house and the current owner facts required by the mini-app home page.
 func (s *Store) MembershipsByUser(ctx context.Context, userID string) ([]MembershipSummary, error) {

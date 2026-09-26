@@ -12,13 +12,16 @@ package poll
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"math/big"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -79,7 +82,7 @@ func TestPollFlowIntegration(t *testing.T) {
 	run := time.Now().UnixNano()
 	probeType := fmt.Sprintf("probe-%d", run)
 	botID := run
-	var userIDs []string
+	var userIDs, questionIDs []string
 	var initiativeID string
 	t.Cleanup(func() {
 		exec := func(sql string, args ...any) {
@@ -89,7 +92,12 @@ func TestPollFlowIntegration(t *testing.T) {
 		}
 		exec(`DELETE FROM jobs WHERE type = $1`, probeType)
 		if initiativeID != "" {
-			exec(`DELETE FROM jobs WHERE dedup_key LIKE $1`, notify.TypePollInvite+":"+initiativeID+":%")
+			exec(`DELETE FROM jobs WHERE dedup_key LIKE $1 OR dedup_key = $2`,
+				notify.TypePollInvite+":"+initiativeID+":%", notify.TypePollFinished+":"+initiativeID)
+		}
+		for _, id := range questionIDs {
+			exec(`DELETE FROM jobs WHERE dedup_key IN ($1, $2)`,
+				notify.TypeQuestionAsked+":"+id, notify.TypeQuestionAnswered+":"+id)
 		}
 		// Poll votes and agenda items go with the initiatives, links with the users.
 		exec(`DELETE FROM initiatives WHERE initiator_user_id = ANY($1::uuid[])`, userIDs)
@@ -133,17 +141,26 @@ func TestPollFlowIntegration(t *testing.T) {
 		t.Fatalf("second account on the same owner: %v, want ErrOwnerTaken", err)
 	}
 
+	// The params are checked against the form of the template (решение 14).
+	var paramsErr *rules.ParamsError
+	if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
+		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
+		Title: "Без способа оплаты", Params: json.RawMessage(`{"camera_count": 3}`),
+	}); !errors.As(err, &paramsErr) || paramsErr.Field != "payment_method" || paramsErr.Reason != rules.ParamsRequired {
+		t.Fatalf("params without a required field: %v, want a ParamsError of payment_method", err)
+	}
+
 	initiative, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
 		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
 		Title: "  Камеры в подъезде  ", Description: "3 камеры, хранение 30 дней",
-		Params: map[string]any{"camera_count": 3},
+		Params: json.RawMessage(`{"camera_count": 3, "payment_method": "management_bill"}`),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	initiativeID = initiative.ID
 	if initiative.Stage != "draft" || initiative.RegistryUploadID == "" || initiative.Description == "" ||
-		initiative.Title != "Камеры в подъезде" || initiative.RegistryVersion != 1 {
+		initiative.Title != "Камеры в подъезде" || initiative.RegistryVersion != 1 || initiative.CreatedAt.IsZero() {
 		t.Fatalf("initiative = %+v", initiative)
 	}
 	// The agenda starts with the procedural question: the protocol names the chair and the secretary.
@@ -157,12 +174,28 @@ func TestPollFlowIntegration(t *testing.T) {
 		t.Fatalf("stored params: camera_count = %q, %v", cameras, err)
 	}
 
+	// Решение 76: the draft is Alice's until the poll starts; Bob does not see it.
+	listed := func(u access.User) bool {
+		t.Helper()
+		list, err := initService.ListByHouse(ctx, house.ID, u.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		return slices.ContainsFunc(list, func(in initiatives.Initiative) bool { return in.ID == initiative.ID })
+	}
+	if !listed(alice) || listed(bob) {
+		t.Fatalf("draft: listed for alice = %v, for bob = %v; want only alice", listed(alice), listed(bob))
+	}
+
 	// Решение 2: the snapshot is taken when the poll starts. The draft is pointed to
-	// another version of the registry; the start moves it to the current one.
+	// another version of the registry; the start moves it to the current one. The
+	// version is far from the next ones: the registry package adds version 2 to the
+	// same demo house, and test packages run at the same time.
 	var otherUpload string
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO registry_uploads (house_id, version, total_area_centi, status)
-		SELECT $1::uuid, max(version) + 1, 100, 'preview' FROM registry_uploads WHERE house_id = $1::uuid
+		SELECT $1::uuid, max(version) + 1000, 100, 'preview' FROM registry_uploads WHERE house_id = $1::uuid
 		RETURNING id::text`, house.ID).Scan(&otherUpload); err != nil {
 		t.Fatal(err)
 	}
@@ -190,6 +223,25 @@ func TestPollFlowIntegration(t *testing.T) {
 	if _, err := initService.Get(ctx, "not-a-uuid"); !errors.Is(err, initiatives.ErrNotFound) {
 		t.Fatalf("malformed id: %v, want ErrNotFound", err)
 	}
+	if !listed(bob) {
+		t.Fatal("after the start of the poll the neighbours see the initiative")
+	}
+
+	// The card: the agenda with the majorities, the template version, the snapshot the
+	// thresholds are counted by (3 000 м² of the demo house).
+	card, err := initService.Details(ctx, initiative.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if card.Stage != "poll" || card.RegistryVersion != 1 || card.TotalAreaCenti != 300000 || card.Template == nil ||
+		card.Template.Code != rules.TemplateVideoSurveillance || card.Template.Version != 1 ||
+		!strings.Contains(string(card.Params), "management_bill") || !card.IsLedBy(alice.ID) {
+		t.Fatalf("card = %+v", card)
+	}
+	if items := card.AgendaItems; len(items) != 2 || items[0].Position != 1 ||
+		items[1].MajorityRule != string(rules.TwoThirdsOfAll) || !strings.Contains(items[1].LegalReference, "ч. 1 ст. 46") {
+		t.Fatalf("card agenda = %+v", card.AgendaItems)
+	}
 
 	// Invitations: in the demo house only the initiator gets one (решение 72), the other
 	// testers — Bob, Carol — do not receive Alice's text.
@@ -205,6 +257,13 @@ func TestPollFlowIntegration(t *testing.T) {
 		if n != c.want {
 			t.Fatalf("poll_invite jobs of user %s = %d, want %d", c.user.ID, n, c.want)
 		}
+	}
+
+	// The initiator's invitation is marked: their message has no «Есть вопрос» (решение 78).
+	var toInitiator bool
+	if err := pool.QueryRow(ctx, `SELECT (payload->>'initiator')::boolean FROM jobs WHERE dedup_key = $1`,
+		fmt.Sprintf("%s:%s:%s", notify.TypePollInvite, initiative.ID, alice.ID)).Scan(&toInitiator); err != nil || !toInitiator {
+		t.Fatalf("invitation of the initiator: initiator = %v, %v", toInitiator, err)
 	}
 
 	// Quiet hours (решение 29): a poll started at night reaches the owners at 09:00 of the house.
@@ -223,6 +282,20 @@ func TestPollFlowIntegration(t *testing.T) {
 		}
 	} else if time.Since(runAt) > time.Minute || time.Until(runAt) > time.Minute {
 		t.Fatalf("invitation in the day time: run_at = %s, want now", runAt)
+	}
+
+	// Решение 77: the result goes to the initiator when the term ends; at night — in the morning.
+	var finishAt time.Time
+	if err := pool.QueryRow(ctx, `SELECT run_at FROM jobs WHERE dedup_key = $1`,
+		notify.TypePollFinished+":"+initiative.ID).Scan(&finishAt); err != nil {
+		t.Fatalf("poll_finished job: %v", err)
+	}
+	wantFinish := *started.PollEndsAt
+	if until, quiet := notify.QuietHoursEnd(wantFinish, houseRef.Location()); quiet {
+		wantFinish = until
+	}
+	if d := finishAt.Sub(wantFinish); d < -time.Millisecond || d > time.Millisecond {
+		t.Fatalf("poll_finished run_at = %s, want %s", finishAt, wantFinish)
 	}
 
 	vote := func(u access.User, choice string, survey *Survey) CastResult {
@@ -293,10 +366,41 @@ func TestPollFlowIntegration(t *testing.T) {
 		t.Fatalf("votes = %d/%d, want 2/2", progress.VotesFor, progress.VotesAgainst)
 	}
 
+	// The card shows the caller's own vote: Carol's two flats sum up, Alice's «против»
+	// has no survey, Dave has not voted.
+	mine, voted, err := polls.MyVote(ctx, initiative.ID, carol.ID)
+	if err != nil || !voted || mine.Choice != ChoiceFor ||
+		big.NewRat(mine.WeightNum, mine.WeightDen*100).Cmp(big.NewRat(94, 3)) != 0 {
+		t.Fatalf("carol's vote = %+v %v %v, want «за» 94/3 м²", mine, voted, err)
+	}
+	if mine, voted, err = polls.MyVote(ctx, initiative.ID, alice.ID); err != nil || !voted ||
+		mine.Choice != ChoiceAgainst || mine.OfficialChannel != "" || mine.WillingToHelp {
+		t.Fatalf("alice's vote = %+v %v %v, want «против» without the survey", mine, voted, err)
+	}
+	if _, voted, err = polls.MyVote(ctx, initiative.ID, dave.ID); err != nil || voted {
+		t.Fatalf("dave's vote: %v %v, want none", voted, err)
+	}
+
 	// An outsider without a verified link cannot vote.
 	if _, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: dave.ID, Choice: ChoiceFor}); !errors.Is(err, ErrNotOwner) {
 		t.Fatalf("dave vote: %v", err)
 	}
+
+	testQuestions(t, ctx, pool, initService, users, initiative.ID, alice, bob, &questionIDs)
+
+	// Решение 77: the term closes the poll while the initiative is still on the poll stage.
+	setTerm := func(interval string) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `UPDATE initiatives SET poll_ends_at = now() + $2::interval WHERE id = $1::uuid`,
+			initiative.ID, interval); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setTerm("-1 minute")
+	if _, err := polls.CastVote(ctx, CastInput{InitiativeID: initiative.ID, UserID: carol.ID, Choice: ChoiceAgainst}); !errors.Is(err, ErrPollClosed) {
+		t.Fatalf("vote after the term: %v, want ErrPollClosed", err)
+	}
+	setTerm("1 day")
 
 	// The poll freezes on the way to the meeting: votes are no longer taken.
 	if _, err := pool.Exec(ctx, `UPDATE initiatives SET stage = 'meeting' WHERE id = $1::uuid`, initiative.ID); err != nil {
@@ -333,21 +437,156 @@ func TestPollFlowIntegration(t *testing.T) {
 		!strings.Contains(tpl.Items[1].LegalReference, "ч. 1 ст. 46") {
 		t.Fatalf("template = %+v", tpl)
 	}
+	// The form comes from the database as seeded: the mini-app builds it from the schema.
+	if schema, err := rules.CompileParamsSchema(tpl.ParamsSchema); err != nil || !strings.Contains(string(tpl.UISchema), "enum_titles") {
+		t.Fatalf("stored form of the template: %v, ui = %s", err, tpl.UISchema)
+	} else if err := schema.Validate([]byte(`{"camera_count": 3, "payment_method": "management_bill"}`)); err != nil {
+		t.Fatalf("stored schema: %v", err)
+	}
+	if byID, err := catalog.TemplateByID(ctx, tpl.ID); err != nil || byID.Code != tpl.Code || len(byID.Items) != 2 {
+		t.Fatalf("template by id = %+v, %v", byID, err)
+	}
+	list, err := catalog.Templates(ctx)
+	if err != nil || !slices.ContainsFunc(list, func(c rules.CatalogTemplate) bool {
+		return c.Code == rules.TemplateVideoSurveillance && c.Version == 1 && c.Name == "Видеонаблюдение"
+	}) {
+		t.Fatalf("templates = %+v, %v", list, err)
+	}
 
 	// One account creates at most MaxInitiativesPerDay initiatives in 24 hours: each
 	// may message the owners of the house.
+	params := json.RawMessage(`{"camera_count": 1, "payment_method": "special_assessment"}`)
+	var draft initiatives.Initiative
 	for i := 1; i < initiatives.MaxInitiativesPerDay; i++ {
-		if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
+		if draft, err = initService.CreateFromTemplate(ctx, initiatives.CreateInput{
 			HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance,
-			Title: fmt.Sprintf("Инициатива %d", i),
+			Title: fmt.Sprintf("Инициатива %d", i), Params: params,
 		}); err != nil {
 			t.Fatalf("initiative %d: %v", i, err)
 		}
 	}
+	// A draft is not seen by the neighbours (решение 76) and takes no questions.
+	if _, err := initService.AskQuestion(ctx, draft.ID, bob.ID, "Вопрос к черновику"); !errors.Is(err, initiatives.ErrQuestionsClosed) {
+		t.Fatalf("question to a draft: %v, want ErrQuestionsClosed", err)
+	}
 	if _, err := initService.CreateFromTemplate(ctx, initiatives.CreateInput{
 		HouseID: house.ID, InitiatorUserID: alice.ID, TemplateCode: rules.TemplateVideoSurveillance, Title: "Лишняя",
+		Params: params,
 	}); !errors.Is(err, initiatives.ErrTooManyInitiatives) {
 		t.Fatalf("initiative over the daily limit: %v, want ErrTooManyInitiatives", err)
+	}
+}
+
+// testQuestions checks questions to the initiator (решение 78): Bob asks about Alice's
+// initiative and the question is queued to her; the daily limit; only the initiator
+// answers, once, and the answer is queued back to Bob by his MAX id.
+func testQuestions(t *testing.T, ctx context.Context, pool *pgxpool.Pool, initService *initiatives.Service,
+	users *access.Store, initiativeID string, alice, bob access.User, ids *[]string,
+) {
+	t.Helper()
+	queued := func(key string) bool {
+		t.Helper()
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM jobs WHERE dedup_key = $1`, key).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+
+		return n == 1
+	}
+	ask := func(text string) (initiatives.Question, error) {
+		t.Helper()
+		q, err := initService.AskQuestion(ctx, initiativeID, bob.ID, text)
+		if err == nil {
+			*ids = append(*ids, q.ID)
+		}
+
+		return q, err
+	}
+
+	for text, want := range map[string]error{
+		"   ": initiatives.ErrEmptyText,
+		strings.Repeat("я", initiatives.MaxQuestionLen+1): initiatives.ErrTextTooLong,
+	} {
+		if _, err := ask(text); !errors.Is(err, want) {
+			t.Fatalf("question %.10q…: %v, want %v", text, err, want)
+		}
+	}
+
+	q, err := ask("  Кто будет смотреть записи?  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q.Text != "Кто будет смотреть записи?" || !queued(notify.TypeQuestionAsked+":"+q.ID) {
+		t.Fatalf("question = %+v, want it trimmed and queued to the initiator", q)
+	}
+	// The length is counted in characters: 1000 Cyrillic letters are 2000 bytes.
+	long, err := ask(strings.Repeat("я", initiatives.MaxQuestionLen))
+	if err != nil {
+		t.Fatalf("question of %d characters: %v", initiatives.MaxQuestionLen, err)
+	}
+	for i := 2; i < initiatives.MaxQuestionsPerDay; i++ {
+		if _, err := ask(fmt.Sprintf("Вопрос %d", i)); err != nil {
+			t.Fatalf("question %d: %v", i, err)
+		}
+	}
+	if _, err := ask("Лишний вопрос"); !errors.Is(err, initiatives.ErrTooManyQuestions) {
+		t.Fatalf("question over the daily limit: %v, want ErrTooManyQuestions", err)
+	}
+	// The initiator answers questions, they do not ask their own initiative.
+	if _, err := initService.AskQuestion(ctx, initiativeID, alice.ID, "Сам себе"); !errors.Is(err, initiatives.ErrOwnInitiative) {
+		t.Fatalf("question of the initiator: %v, want ErrOwnInitiative", err)
+	}
+
+	if _, err := initService.AnswerQuestion(ctx, q.ID, bob.ID, "Отвечу сам"); !errors.Is(err, initiatives.ErrNotInitiator) {
+		t.Fatalf("answer of a neighbour: %v, want ErrNotInitiator", err)
+	}
+	answered, err := initService.AnswerQuestion(ctx, q.ID, alice.ID, "  Только УК, по запросу полиции  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answered.AnsweredAt == nil || !queued(notify.TypeQuestionAnswered+":"+q.ID) {
+		t.Fatalf("answer = %+v, want it stored and queued to the asker", answered)
+	}
+	if _, err := initService.AnswerQuestion(ctx, q.ID, alice.ID, "Ещё раз"); !errors.Is(err, initiatives.ErrQuestionAnswered) {
+		t.Fatalf("second answer: %v, want ErrQuestionAnswered", err)
+	}
+	// Two presses of «Ответить» from two devices at once: one answer wins, the asker
+	// gets one message.
+	var wg sync.WaitGroup
+	results := make(chan error, 8)
+	for i := range 8 {
+		wg.Go(func() {
+			_, err := initService.AnswerQuestion(ctx, long.ID, alice.ID, fmt.Sprintf("Ответ %d", i))
+			results <- err
+		})
+	}
+	wg.Wait()
+	close(results)
+	won := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			won++
+		case !errors.Is(err, initiatives.ErrQuestionAnswered):
+			t.Fatalf("concurrent answer: %v", err)
+		}
+	}
+	if won != 1 {
+		t.Fatalf("%d concurrent answers were accepted, want 1", won)
+	}
+	stored, err := initService.Question(ctx, q.ID)
+	if err != nil || stored.Answer != "Только УК, по запросу полиции" || stored.AskedByUserID != bob.ID {
+		t.Fatalf("stored question = %+v, %v", stored, err)
+	}
+	if _, err := initService.Question(ctx, "not-a-uuid"); !errors.Is(err, initiatives.ErrQuestionNotFound) {
+		t.Fatalf("malformed question id: %v", err)
+	}
+
+	if maxID, err := users.MaxUserID(ctx, bob.ID); err != nil || maxID != bob.MaxUserID {
+		t.Fatalf("bob's MAX id = %d, %v, want %d", maxID, err, bob.MaxUserID)
+	}
+	if _, err := users.MaxUserID(ctx, "01a0ddfe-0000-7000-8000-000000000000"); !errors.Is(err, access.ErrNotFound) {
+		t.Fatalf("MAX id of a deleted account: %v, want ErrNotFound", err)
 	}
 }
 
