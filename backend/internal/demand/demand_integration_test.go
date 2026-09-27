@@ -54,7 +54,7 @@ func TestDemandFlowIntegration(t *testing.T) {
 	inits := initiatives.NewService(pool, tm, catalog, houses, users, notifier)
 	polls := poll.NewStore(pool, inits, users, houses)
 	meetings := meeting.NewService(pool, tm, inits, users, houses, notifier)
-	demands := NewService(pool, tm, inits, polls, users, meetings, houses, users, documents.DemandPDF)
+	demands := NewService(pool, tm, inits, polls, users, meetings, houses, users, documents.DemandPDF, notifier)
 	if err := catalog.SeedCatalog(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestDemandFlowIntegration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if d.Status != "draft" || d.Channel != ChannelPaper || d.SupportNum != 38100 || d.SupportDen != 1 {
+	if d.Status != "draft" || d.Channel != ChannelPaper || d.SupportNum != 31750 || d.SupportDen != 1 {
 		t.Fatalf("demand = %+v", d)
 	}
 

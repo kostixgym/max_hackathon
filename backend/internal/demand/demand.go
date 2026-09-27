@@ -17,6 +17,7 @@ import (
 	"maxhackathon/backend/internal/documents"
 	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/meeting"
+	"maxhackathon/backend/internal/notify"
 	"maxhackathon/backend/internal/platform/db"
 	"maxhackathon/backend/internal/poll"
 	"maxhackathon/backend/internal/registry"
@@ -94,6 +95,11 @@ type Demand struct {
 	Overdue bool
 }
 
+// Queue is the notify module job queue.
+type Queue interface {
+	EnqueueTx(ctx context.Context, tx pgx.Tx, jobs ...notify.Job) error
+}
+
 // Service owns the demands table and the transaction boundary of the flow.
 type Service struct {
 	pool        *pgxpool.Pool
@@ -105,14 +111,16 @@ type Service struct {
 	registry    Registry
 	verified    Verified
 	documents   Documents
+	queue       Queue
 }
 
 // NewService creates a demand service.
 func NewService(pool *pgxpool.Pool, tm *db.TransactionManager, initiatives Initiatives,
 	polls PollProgress, access Access, meetings Meetings, registry Registry,
-	verified Verified, documents Documents) *Service {
+	verified Verified, documents Documents, queue Queue) *Service {
 	return &Service{pool: pool, tm: tm, initiatives: initiatives, polls: polls,
-		access: access, meetings: meetings, registry: registry, verified: verified, documents: documents}
+		access: access, meetings: meetings, registry: registry, verified: verified,
+		documents: documents, queue: queue}
 }
 
 // PDF builds the demand document. Access rules are the same as Get.
@@ -306,16 +314,28 @@ func (s *Service) MarkDelivered(ctx context.Context, demandID, byUserID string, 
 	}
 	due := deliveredAt.Add(45 * 24 * time.Hour)
 
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE demands
-		SET status = 'delivered', delivered_at = $2, uk_due_at = $3, updated_at = now()
-		WHERE id = $1::uuid AND status = 'draft'`,
-		demandID, deliveredAt, due)
+	// Требование и джоба уведомления — одной транзакцией: принято значит разослано.
+	err = s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `
+			UPDATE demands
+			SET status = 'delivered', delivered_at = $2, uk_due_at = $3, updated_at = now()
+			WHERE id = $1::uuid AND status = 'draft'`,
+			demandID, deliveredAt, due)
+		if err != nil {
+			return fmt.Errorf("mark delivered: %w", err)
+		}
+		if tag.RowsAffected() != 1 {
+			return ErrAlreadyDelivered
+		}
+
+		return s.queue.EnqueueTx(ctx, tx, notify.Job{
+			Type:     notify.TypeDemandDelivered,
+			DedupKey: notify.TypeDemandDelivered + ":" + demandID,
+			Payload:  map[string]any{"demand_id": demandID},
+		})
+	})
 	if err != nil {
-		return d, fmt.Errorf("mark delivered: %w", err)
-	}
-	if tag.RowsAffected() != 1 {
-		return d, ErrAlreadyDelivered
+		return d, err
 	}
 
 	return s.load(ctx, demandID)
