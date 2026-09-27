@@ -185,8 +185,9 @@ func TestDemandFlowIntegration(t *testing.T) {
 		t.Fatalf("pdf: %d bytes, prefix %q", len(pdf), pdf[:4])
 	}
 
-	// Просрочка: срок в прошлом, собрания нет → overdue при чтении.
-	if _, err := pool.Exec(ctx, `UPDATE demands SET uk_due_at = now() - interval '1 day' WHERE id = $1::uuid`, d.ID); err != nil {
+	// Просрочка: срок в прошлом, собрания нет → overdue при чтении. Двигаем обе
+	// даты в прошлое, чтобы не нарушить «uk_due_at >= delivered_at».
+	if _, err := pool.Exec(ctx, `UPDATE demands SET delivered_at = now() - interval '46 days', uk_due_at = now() - interval '1 day' WHERE id = $1::uuid`, d.ID); err != nil {
 		t.Fatal(err)
 	}
 	d3, err := demands.Get(ctx, d.ID, voters[0].ID)
