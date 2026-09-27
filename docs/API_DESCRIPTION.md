@@ -805,9 +805,9 @@
 
 ### `POST /api/v1/initiatives/{id}/meetings`
 
-**Каркас (Г2).** Сотрудник УК создаёт собрание по требованию, стадия инициативы — `demand`. В той же транзакции
-создаются бюллетени по всем собственникам снимка реестра инициативы (вес копируется), а инициатива переходит на
-стадию `meeting`.
+Сотрудник УК создаёт собрание по требованию, стадия инициативы — `demand`, и становится его администратором. В той
+же транзакции создаются бюллетени по всем собственникам снимка реестра инициативы (вес копируется), инициатива
+переходит на стадию `meeting`, а бот получает задачу `meeting_created`.
 
 **Request body:**
 
@@ -823,22 +823,27 @@
 ```
 
 - `form` — `gis_electronic` или `paper_absentee`.
-- Даты: в обычном доме голосование начинается не раньше чем через 10 дней после `notice_at` (ст. 45 ч. 4 ЖК). В
-  демо-доме подходят любые будущие даты.
+- Даты:
+  - `notice_at` не в прошлом (допуск — 5 минут на часы клиента);
+  - `voting_starts_at` не раньше `notice_at`, `voting_ends_at` позже `voting_starts_at`;
+  - в обычном доме голосование начинается не раньше чем через 10 дней после `notice_at` (ст. 45 ч. 4 ЖК), в
+    демо-доме — сразу.
 - Председатель и секретарь — разные собственники снимка. Кандидатов отдаёт
   `GET /houses/{houseID}/meeting-officer-candidates`.
 
 **Response `201 Created`:** как `GET /meetings/{id}`.
 
 **Ошибки:**
+- `400 invalid_request` — нет поля, неизвестная `form`, дата не в RFC 3339;
+- `400 invalid_dates` — нарушено правило дат, в `field` — поле, которое подсветить;
+- `400 invalid_officers`;
 - `403 staff_only`;
 - `404 initiative_not_found`;
-- `409 wrong_stage`, `409 active_meeting_exists`;
-- `400 invalid_dates`, `400 invalid_officers`.
+- `409 wrong_stage`, `409 active_meeting_exists`.
 
 ### `GET /api/v1/meetings/{id}`
 
-**Каркас (Г3).** Сроки, статус, повестка и прогресс собрания. Видят администратор и подтверждённые жители дома.
+Сроки, статус, повестка и прогресс собрания. Видят администратор, сотрудники УК дома и подтверждённые жители.
 
 **Response `200 OK`:**
 
@@ -860,7 +865,7 @@
     {"id": "0199...", "position": 1, "text": "Избрать председателя и секретаря…", "majority_rule": "majority_of_participants"}
   ],
   "progress": {
-    "ballots_total": 64,
+    "ballots_total": 75,
     "ballots_received": 12,
     "participants_m2": "610.50",
     "total_m2": "3000.00",
@@ -873,6 +878,8 @@
 ```
 
 - `status` считается по датам: `preparation` → `notice` → `voting` → `counting` (голосование окончено) → `completed`.
+- `progress.ballots_received` — бюллетени на руках (получены или учтены), `participants_m2` — площадь их владельцев.
+  Как голосовали, до подсчёта не видно никому.
 - `is_admin` — может ли пользователь вести собрание.
 - `outcome` после фиксации — `held` или `no_quorum`.
 
@@ -880,13 +887,14 @@
 
 ### `GET /api/v1/meetings/{id}/tracker`
 
-**Каркас (Г3).** Трекер администратора: список бюллетеней без вариантов голоса.
+Трекер администратора: список бюллетеней без вариантов голоса, в порядке обхода — по подъездам, внутри подъезда по
+номеру квартиры, нежилые помещения в конце подъезда.
 
 **Response `200 OK`:**
 
 ```json
 {
-  "summary": {"ballots_total": 64, "received": 12, "counted": 0, "participants_m2": "610.50"},
+  "summary": {"ballots_total": 75, "received": 12, "counted": 0, "participants_m2": "610.50"},
   "ballots": [
     {
       "id": "0199...",
@@ -900,20 +908,25 @@
 }
 ```
 
-`status` — `not_voted`, `paper_received`, `counted` или `invalid`.
+- `status` — `not_voted`, `paper_received`, `counted` или `invalid`.
+- `summary.received` — бюллетени на руках (получены или учтены), `counted` — учтены.
 
-**Ошибки:** `403 staff_only`.
+**Ошибки:** `403 staff_only`, `404 meeting_not_found`.
 
 ### `POST /api/v1/meetings/{id}/ballots/receive`
 
-**Каркас (Г3).** Отмечает, что бумажный бюллетень из трекера получен. Отметка по QR-токену появится вместе со
-сканером и в объём до 30.09 не входит.
+Отмечает, что бумажный бюллетень из трекера получен. Работает до окончания голосования: бюллетень, поступивший
+позже, не учитывается. Отметка по QR-токену появится вместе со сканером и в объём до 30.09 не входит.
 
 **Request body:** `{"ballot_id": "0199..."}`.
 
 **Response `200 OK`:** `{ballot_id, status: "paper_received", received_at}`.
 
-**Ошибки:** `403 staff_only`, `404 ballot_not_found`, `409 already_received`.
+**Ошибки:**
+- `400 invalid_request` — нет `ballot_id`;
+- `403 staff_only`;
+- `404 meeting_not_found`, `404 ballot_not_found`;
+- `409 already_received`, `409 voting_finished`.
 
 ### `PUT /api/v1/ballots/{id}/decisions`
 

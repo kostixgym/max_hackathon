@@ -82,7 +82,7 @@ func (s *Service) Details(ctx context.Context, id string) (Initiative, error) {
 // rules module catalog.
 func (s *Service) agenda(ctx context.Context, initiativeID string) ([]AgendaItem, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT position, text, decision_type_id::text
+		SELECT id::text, position, text, decision_type_id::text
 		FROM agenda_items
 		WHERE initiative_id = $1::uuid
 		ORDER BY position`, initiativeID)
@@ -96,7 +96,7 @@ func (s *Service) agenda(ctx context.Context, initiativeID string) ([]AgendaItem
 	for rows.Next() {
 		var item AgendaItem
 		var typeID string
-		if err := rows.Scan(&item.Position, &item.Text, &typeID); err != nil {
+		if err := rows.Scan(&item.ID, &item.Position, &item.Text, &typeID); err != nil {
 			return nil, fmt.Errorf("scan agenda item: %w", err)
 		}
 		items = append(items, item)

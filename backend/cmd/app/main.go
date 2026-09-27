@@ -24,6 +24,7 @@ import (
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/bot"
 	"maxhackathon/backend/internal/initiatives"
+	"maxhackathon/backend/internal/meeting"
 	"maxhackathon/backend/internal/notify"
 	"maxhackathon/backend/internal/platform/config"
 	"maxhackathon/backend/internal/platform/db"
@@ -87,6 +88,7 @@ func run() error {
 	users := access.NewStore(pool, houses, initiatives.NewStore(pool))
 	initService := initiatives.NewService(pool, tm, catalog, houses, users, notifier)
 	polls := poll.NewStore(pool, initService, users, houses)
+	meetings := meeting.NewService(pool, tm, initService, users, houses, notifier)
 
 	// Decision types and templates are platform data, not demo data (решение 9):
 	// without them no initiative can be created, so they are seeded on every start.
@@ -126,9 +128,10 @@ func run() error {
 		Votes:            polls,
 		DemoMembers:      users,
 
-		// Sprint to 30.09: the staff cabinet.
+		// Sprint to 30.09: the staff cabinet and the meeting.
 		Orgs:      users,
 		OrgHouses: houses,
+		Meetings:  meetings,
 	})
 
 	var wg sync.WaitGroup
