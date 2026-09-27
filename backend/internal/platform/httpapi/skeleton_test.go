@@ -77,6 +77,7 @@ func TestSkeletonRoutesNotImplemented(t *testing.T) {
 		{http.MethodGet, "/api/v1/meetings/m-1/tracker"},
 		{http.MethodPost, "/api/v1/meetings/m-1/ballots/receive"},
 		{http.MethodPut, "/api/v1/ballots/b-1/decisions"},
+		{http.MethodPut, "/api/v1/meetings/m-1/gis-results"},
 		{http.MethodGet, "/api/v1/meetings/m-1/result-preview"},
 		{http.MethodPost, "/api/v1/meetings/m-1/finalize"},
 		{http.MethodGet, "/api/v1/meetings/m-1/protocol.pdf"},

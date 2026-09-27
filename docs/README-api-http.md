@@ -111,16 +111,16 @@ HTTP-контекста; доменные модули и PostgreSQL-репоз�
 
 | Метод и путь | Назначение | Статус | Сущности БД | Состояние БД |
 |---|---|---|---|---|
-| `POST /api/v1/initiatives/{id}/meetings` | Создать собрание: сотрудником УК на пути A или инициатором на пути B | Нет, БД готова | `Meeting`, `Initiative`, `AgendaItem`, `Ballot` | Готовы |
-| `GET /api/v1/meetings/{id}` | Данные собрания, сроки, статус и агрегированный прогресс | Нет, БД готова | `Meeting`, `AgendaItem`, `Ballot` | Готовы |
-| `GET /api/v1/meetings/{id}/tracker` | Трекер «голосовал/нет» с ограничением данных по роли | Нет, БД готова | `Meeting`, `Ballot`, `Premise`, `Owner` | Готовы |
+| `POST /api/v1/initiatives/{id}/meetings` | Создать собрание сотрудником УК на пути A | **Готово** | `Meeting`, `Initiative`, `AgendaItem`, `Ballot` | Готовы |
+| `GET /api/v1/meetings/{id}` | Данные собрания, сроки, статус и агрегированный прогресс | **Готово** | `Meeting`, `AgendaItem`, `Ballot` | Готовы |
+| `GET /api/v1/meetings/{id}/tracker` | Трекер «голосовал/нет» с ограничением данных по роли | **Готово** | `Meeting`, `Ballot`, `Premise`, `Owner` | Готовы |
 | `PUT /api/v1/meetings/{id}/my-online-status` | Поставить или снять отметку «уже проголосовал онлайн» со слов собственника | Нет, БД готова | `Meeting`, `Ballot`, `Membership` | Статус и время отметки есть в `Ballot` |
 | `GET /api/v1/meetings/{id}/my-ballots` | Получить бумажные бюллетени доступных собственников | Нет, БД готова | `Meeting`, `Ballot`, `Membership`, `Owner` | Готовы |
-| `POST /api/v1/meetings/{id}/ballots/receive` | Найти бюллетень по QR или помещению и отметить получение | Нет, БД готова | `Meeting`, `Ballot` | Готовы |
-| `PUT /api/v1/ballots/{id}/decisions` | После окончания голосования внести решения бумажного бюллетеня | Нет, БД готова | `Ballot`, `BallotDecision`, `AgendaItem` | Готовы |
-| `PUT /api/v1/meetings/{id}/gis-results` | Вручную внести официальные агрегированные результаты ГИС ЖКХ | Нет, БД готова | `Meeting`, `GisResultEntry`, `AgendaItem` | Готовы |
-| `GET /api/v1/meetings/{id}/result-preview` | Рассчитать предварительный кворум и результат без фиксации | Нет, БД готова | `Meeting`, `BallotDecision`, `GisResultEntry`, `AgendaItem`, `DecisionType` | Готовы |
-| `POST /api/v1/meetings/{id}/finalize` | Один раз записать официальный итог по каждому вопросу | Нет, БД готова | `Meeting`, `MeetingResult`, официальные источники результата, `AuditLog` | Готовы |
+| `POST /api/v1/meetings/{id}/ballots/receive` | Отметить получение бюллетеня по его id | **Готово** | `Meeting`, `Ballot` | Готовы |
+| `PUT /api/v1/ballots/{id}/decisions` | После окончания голосования внести решения бумажного бюллетеня | **Готово** | `Ballot`, `BallotDecision`, `AgendaItem` | Готовы |
+| `PUT /api/v1/meetings/{id}/gis-results` | Вручную внести официальные агрегированные результаты ГИС ЖКХ | **Готово** | `Meeting`, `GisResultEntry`, `AgendaItem` | Готовы |
+| `GET /api/v1/meetings/{id}/result-preview` | Рассчитать предварительный кворум и результат без фиксации | **Готово** | `Meeting`, `BallotDecision`, `GisResultEntry`, `AgendaItem`, `DecisionType` | Готовы |
+| `POST /api/v1/meetings/{id}/finalize` | Один раз записать официальный итог по каждому вопросу | **Готово** | `Meeting`, `MeetingResult`, официальные источники результата | Готовы |
 | `POST /api/v1/meetings/{id}/cancel` | Выполнить допустимый переход отмены с обязательной причиной | Нет, БД готова | `Meeting`, `Initiative`, `AuditLog` | Готовы |
 
 ## Документы

@@ -25,6 +25,7 @@ type fakeMeetings struct {
 	view     meeting.View
 	tracker  meeting.Tracker
 	received meeting.ReceivedBallot
+	gis      meeting.GISResults
 	result   meeting.Result
 	final    meeting.Final
 	err      error
@@ -32,6 +33,9 @@ type fakeMeetings struct {
 	created   meeting.CreateInput
 	viewer    string
 	decisions []meeting.Decision
+	gisID     string
+	gisUserID string
+	gisInput  meeting.GISResults
 }
 
 func (f *fakeMeetings) Create(_ context.Context, in meeting.CreateInput) (meeting.View, error) {
@@ -58,6 +62,16 @@ func (f *fakeMeetings) RecordDecisions(_ context.Context, ballotID, _ string, d 
 	f.decisions = d
 
 	return meeting.BallotDecisions{BallotID: ballotID, Status: meeting.BallotCounted, Decisions: d}, f.err
+}
+
+func (f *fakeMeetings) RecordGISResults(
+	_ context.Context,
+	meetingID, userID string,
+	input meeting.GISResults,
+) (meeting.GISResults, error) {
+	f.gisID, f.gisUserID, f.gisInput = meetingID, userID, input
+
+	return f.gis, f.err
 }
 
 func (f *fakeMeetings) Preview(context.Context, string, string) (meeting.Result, error) {
@@ -187,6 +201,8 @@ func TestMeetingErrors(t *testing.T) {
 		{meeting.ErrAlreadyFinalized, http.StatusConflict, "already_finalized"},
 		{meeting.ErrBallotNotReceived, http.StatusConflict, "ballot_not_received"},
 		{meeting.ErrInvalidDecisions, http.StatusBadRequest, "invalid_request"},
+		{meeting.ErrInvalidGISResults, http.StatusBadRequest, "invalid_gis_results"},
+		{meeting.ErrGISResultsNotAllowed, http.StatusConflict, "gis_results_not_allowed"},
 		{meeting.ErrNotDemo, http.StatusForbidden, "not_demo"},
 		{errors.New("connection reset"), http.StatusInternalServerError, "internal"},
 	}
@@ -273,7 +289,14 @@ func sampleResult() meeting.Result {
 
 func TestMeetingCountAndResult(t *testing.T) {
 	fake := &fakeMeetings{
-		view:   sampleMeetingView(),
+		view: sampleMeetingView(),
+		gis: meeting.GISResults{
+			OnlineParticipantsM2: big.NewRat(1950, 1),
+			Entries: []meeting.GISResultEntry{{
+				AgendaItemID: "a-1", ForM2: big.NewRat(1800, 1), AgainstM2: big.NewRat(100, 1),
+				AbstainM2: big.NewRat(50, 1),
+			}},
+		},
 		result: sampleResult(),
 		final: meeting.Final{MeetingID: "m-1", Outcome: meeting.OutcomeHeld,
 			FinalizedAt: time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC), Result: sampleResult()},
@@ -294,6 +317,30 @@ func TestMeetingCountAndResult(t *testing.T) {
 		rec := callJSON(h, http.MethodPut, "/api/v1/ballots/b-1/decisions", body)
 		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
 			t.Fatalf("decisions %s: %d %s", body, rec.Code, rec.Body)
+		}
+	}
+
+	gisBody := `{"entries":[{"agenda_item_id":"a-1","for_m2":"1800.00","against_m2":"100.00",` +
+		`"abstain_m2":"50.00"}],"online_participants_m2":"1950.00"}`
+	rec = callJSON(h, http.MethodPut, "/api/v1/meetings/m-1/gis-results", gisBody)
+	if rec.Code != http.StatusOK || fake.gisID != "m-1" || fake.gisUserID != "user-42" ||
+		fake.gisInput.OnlineParticipantsM2.Cmp(big.NewRat(1950, 1)) != 0 ||
+		len(fake.gisInput.Entries) != 1 || fake.gisInput.Entries[0].AgainstM2.Cmp(big.NewRat(100, 1)) != 0 ||
+		!strings.Contains(rec.Body.String(), `"for_m2":"1800.00"`) {
+		t.Fatalf("GIS results: %d %s (module got %+v)", rec.Code, rec.Body, fake.gisInput)
+	}
+
+	for _, body := range []string{
+		`{}`,
+		`{"entries":[],"online_participants_m2":"0.00"}`,
+		`{"entries":[{"agenda_item_id":"a-1","for_m2":"-1","against_m2":"1","abstain_m2":"0"}],"online_participants_m2":"0"}`,
+		`{"entries":[{"agenda_item_id":"a-1","for_m2":"1.001","against_m2":"0","abstain_m2":"0"}],"online_participants_m2":"1.001"}`,
+		`{"entries":[{"agenda_item_id":"a-1","for_m2":"1e3","against_m2":"0","abstain_m2":"0"}],"online_participants_m2":"1000"}`,
+		`{"entries":[{"agenda_item_id":"a-1","for_m2":"1/2","against_m2":"0","abstain_m2":"0"}],"online_participants_m2":"0.50"}`,
+	} {
+		rec := callJSON(h, http.MethodPut, "/api/v1/meetings/m-1/gis-results", body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+			t.Fatalf("GIS body %s: %d %s", body, rec.Code, rec.Body)
 		}
 	}
 
@@ -337,6 +384,29 @@ func TestMeetingCountAndResult(t *testing.T) {
 		rec = callJSON(newMeetingServer(&fakeMeetings{err: meeting.ErrNotDemo}), http.MethodPost, target, "")
 		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "not_demo") {
 			t.Fatalf("%s in a real house: %d %s", target, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestParseM2Input(t *testing.T) {
+	for value, want := range map[string]*big.Rat{
+		"0":       big.NewRat(0, 1),
+		"0.00":    big.NewRat(0, 1),
+		"1950.5":  big.NewRat(3901, 2),
+		"1950.50": big.NewRat(3901, 2),
+	} {
+		got, ok := parseM2Input(value)
+		if !ok || got.Cmp(want) != 0 {
+			t.Errorf("parseM2Input(%q) = %v, %v; want %s", value, got, ok, want.RatString())
+		}
+	}
+
+	for _, value := range []string{
+		"", "-1", ".5", "1.", "1.001", "1e3", "1/2", "NaN", "+1", " 1", "1 ",
+		"999999999999999999999999999999999999999999999999999999",
+	} {
+		if got, ok := parseM2Input(value); ok {
+			t.Errorf("parseM2Input(%q) = %v, true; want invalid", value, got)
 		}
 	}
 }

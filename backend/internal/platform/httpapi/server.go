@@ -128,6 +128,7 @@ func NewHandler(d Deps) http.Handler {
 	protected.GET("/meetings/:id/tracker", h.meetingTracker)
 	protected.POST("/meetings/:id/ballots/receive", h.receiveBallot)
 	protected.PUT("/ballots/:id/decisions", h.ballotDecisions)
+	protected.PUT("/meetings/:id/gis-results", h.meetingGISResults)
 	protected.GET("/meetings/:id/result-preview", h.meetingResultPreview)
 	protected.POST("/meetings/:id/finalize", h.finalizeMeeting)
 	protected.GET("/meetings/:id/protocol.pdf", h.meetingProtocolPDF)

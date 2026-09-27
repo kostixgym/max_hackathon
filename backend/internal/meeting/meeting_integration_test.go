@@ -599,6 +599,146 @@ func TestMeetingResultIntegration(t *testing.T) {
 	}
 }
 
+// Official GIS aggregates can be corrected before finalization and are combined
+// with counted paper ballots in the preview and the write-once result.
+func TestGISResultsIntegration(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+
+	alice, bob := e.user(t, 21), e.user(t, 22)
+	if _, err := e.users.ConfirmDemoOwner(ctx, alice.ID, e.house.ID, "12", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.users.ConfirmDemoOwner(ctx, bob.ID, e.house.ID, "13", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.users.ConfirmDemoStaff(ctx, alice.ID, e.house.ID); err != nil {
+		t.Fatal(err)
+	}
+	initiative := e.demandInitiative(t, alice.ID)
+	snap, err := e.houses.CurrentSnapshot(ctx, e.house.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners, err := e.houses.SnapshotOwners(ctx, snap.UploadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	view, err := e.meetings.Create(ctx, CreateInput{
+		InitiativeID: initiative.ID, ByUserID: alice.ID, Form: FormGISElectronic,
+		NoticeAt: now, VotingStartsAt: now.Add(time.Hour), VotingEndsAt: now.Add(2 * time.Hour),
+		ChairOwnerID: owners[2].ID, SecretaryOwnerID: owners[3].ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tracker, err := e.meetings.Tracker(ctx, view.ID, alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var bobBallot TrackerRow
+	for _, row := range tracker.Ballots {
+		if row.PremiseNumber == "13" {
+			bobBallot = row
+			break
+		}
+	}
+	if bobBallot.BallotID == "" {
+		t.Fatal("Bob's ballot not found")
+	}
+	if _, err := e.meetings.ReceiveBallot(ctx, view.ID, bobBallot.BallotID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	results := func(participants, officersFor, officersAgainst, officersAbstain,
+		camerasFor, camerasAgainst, camerasAbstain int64,
+	) GISResults {
+		return GISResults{
+			OnlineParticipantsM2: big.NewRat(participants, 1),
+			Entries: []GISResultEntry{
+				{AgendaItemID: view.Agenda[0].ID, ForM2: big.NewRat(officersFor, 1),
+					AgainstM2: big.NewRat(officersAgainst, 1), AbstainM2: big.NewRat(officersAbstain, 1)},
+				{AgendaItemID: view.Agenda[1].ID, ForM2: big.NewRat(camerasFor, 1),
+					AgainstM2: big.NewRat(camerasAgainst, 1), AbstainM2: big.NewRat(camerasAbstain, 1)},
+			},
+		}
+	}
+	first := results(1800, 1000, 500, 300, 1600, 100, 100)
+	if _, err := e.meetings.RecordGISResults(ctx, view.ID, alice.ID, first); !errors.Is(err, ErrVotingNotFinished) {
+		t.Fatalf("GIS results during voting: %v, want ErrVotingNotFinished", err)
+	}
+	if _, err := e.meetings.FinishVoting(ctx, view.ID, alice.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.meetings.RecordGISResults(ctx, view.ID, bob.ID, first); !errors.Is(err, ErrStaffOnly) {
+		t.Fatalf("GIS results by resident: %v, want ErrStaffOnly", err)
+	}
+	if _, err := e.meetings.RecordGISResults(ctx, view.ID, alice.ID, first); err != nil {
+		t.Fatal(err)
+	}
+
+	// A second PUT corrects all aggregates without adding duplicate rows.
+	corrected := results(1800, 1100, 400, 300, 1700, 50, 50)
+	saved, err := e.meetings.RecordGISResults(ctx, view.ID, alice.ID, corrected)
+	if err != nil || len(saved.Entries) != 2 || saved.Entries[0].ForM2.Cmp(big.NewRat(1100, 1)) != 0 {
+		t.Fatalf("corrected GIS results: %+v, %v", saved, err)
+	}
+	var rows, participantsNum, participantsDen int64
+	if err := e.pool.QueryRow(ctx, `SELECT count(*) FROM gis_result_entries WHERE meeting_id = $1::uuid`,
+		view.ID).Scan(&rows); err != nil || rows != int64(len(view.Agenda)) {
+		t.Fatalf("GIS rows = %d, %v", rows, err)
+	}
+	if err := e.pool.QueryRow(ctx, `
+		SELECT online_participants_weight_num, online_participants_weight_den
+		FROM meetings WHERE id = $1::uuid`, view.ID).Scan(&participantsNum, &participantsDen); err != nil ||
+		participantsNum != 180000 || participantsDen != 1 {
+		t.Fatalf("stored GIS participants = %d/%d, %v", participantsNum, participantsDen, err)
+	}
+
+	if _, err := e.meetings.RecordDecisions(ctx, bobBallot.BallotID, alice.ID,
+		decisionsFor(view.Agenda, ChoiceFor, ChoiceFor)); err != nil {
+		t.Fatal(err)
+	}
+	preview, err := e.meetings.Preview(ctx, view.ID, alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantParticipants := new(big.Rat).Add(big.NewRat(1800, 1), bobBallot.WeightM2)
+	wantOfficersFor := new(big.Rat).Add(big.NewRat(1100, 1), bobBallot.WeightM2)
+	if preview.ParticipantsM2.Cmp(wantParticipants) != 0 || preview.Items[0].ForM2.Cmp(wantOfficersFor) != 0 ||
+		preview.Items[1].AgainstM2.Cmp(big.NewRat(50, 1)) != 0 || !preview.QuorumReached {
+		t.Fatalf("combined preview = %+v", preview)
+	}
+
+	final, err := e.meetings.Finalize(ctx, view.ID, alice.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.Result.ParticipantsM2.Cmp(preview.ParticipantsM2) != 0 ||
+		final.Result.Items[0].ForM2.Cmp(preview.Items[0].ForM2) != 0 {
+		t.Fatalf("final differs from preview: final=%+v preview=%+v", final.Result, preview)
+	}
+	if _, err := e.meetings.RecordGISResults(ctx, view.ID, alice.ID, corrected); !errors.Is(err, ErrAlreadyFinalized) {
+		t.Fatalf("GIS correction after finalize: %v, want ErrAlreadyFinalized", err)
+	}
+
+	// A paper-only meeting never accepts GIS aggregates.
+	paperInitiative := e.demandInitiative(t, alice.ID)
+	paper, err := e.meetings.Create(ctx, CreateInput{
+		InitiativeID: paperInitiative.ID, ByUserID: alice.ID, Form: FormPaperAbsentee,
+		NoticeAt: now, VotingStartsAt: now.Add(time.Hour), VotingEndsAt: now.Add(2 * time.Hour),
+		ChairOwnerID: owners[2].ID, SecretaryOwnerID: owners[3].ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.meetings.RecordGISResults(ctx, paper.ID, alice.ID, corrected); !errors.Is(err, ErrGISResultsNotAllowed) {
+		t.Fatalf("GIS results for paper meeting: %v, want ErrGISResultsNotAllowed", err)
+	}
+}
+
 // realHouse is an ordinary (not demo) house of its own organization with a two-flat
 // registry.
 type realHouse struct {

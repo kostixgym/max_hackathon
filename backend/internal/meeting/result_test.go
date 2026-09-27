@@ -77,7 +77,7 @@ func TestTally(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, err := tally(tt.total, tt.ballots, testAgenda)
+			r, err := tally(tt.total, tt.ballots, GISResults{}, testAgenda)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -97,9 +97,72 @@ func TestTally(t *testing.T) {
 		})
 	}
 
-	if _, err := tally(rat(100, 1), nil, []initiatives.AgendaItem{{ID: "x", MajorityRule: "unanimous"}}); err == nil {
+	if _, err := tally(rat(100, 1), nil, GISResults{},
+		[]initiatives.AgendaItem{{ID: "x", MajorityRule: "unanimous"}}); err == nil {
 		t.Fatal("an unknown majority rule must be an error")
 	}
+}
+
+func TestTallyWithGIS(t *testing.T) {
+	gis := GISResults{
+		OnlineParticipantsM2: rat(60, 1),
+		Entries: []GISResultEntry{
+			{AgendaItemID: "officers", ForM2: rat(31, 1), AgainstM2: rat(20, 1), AbstainM2: rat(9, 1)},
+			{AgendaItemID: "cameras", ForM2: rat(50, 1), AgainstM2: rat(5, 1), AbstainM2: rat(5, 1)},
+		},
+	}
+
+	t.Run("GIS only", func(t *testing.T) {
+		r, err := tally(rat(75, 1), nil, gis, testAgenda)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.ParticipantsM2.Cmp(rat(60, 1)) != 0 || !r.QuorumReached ||
+			!r.Items[0].Accepted || !r.Items[1].Accepted || r.Items[1].ForM2.Cmp(rat(50, 1)) != 0 {
+			t.Fatalf("unexpected GIS tally: %+v", r)
+		}
+	})
+
+	t.Run("GIS plus paper", func(t *testing.T) {
+		paper := []countedBallot{counted(rat(10, 1), ChoiceFor, ChoiceAgainst)}
+		r, err := tally(rat(100, 1), paper, gis, testAgenda)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.ParticipantsM2.Cmp(rat(70, 1)) != 0 || r.Items[0].ForM2.Cmp(rat(41, 1)) != 0 ||
+			r.Items[1].AgainstM2.Cmp(rat(15, 1)) != 0 || !r.QuorumReached {
+			t.Fatalf("unexpected combined tally: %+v", r)
+		}
+	})
+
+	t.Run("combined participants exceed total", func(t *testing.T) {
+		paper := []countedBallot{counted(rat(50, 1), ChoiceFor, ChoiceFor)}
+		if _, err := tally(rat(100, 1), paper, gis, testAgenda); !errors.Is(err, ErrInvalidGISResults) {
+			t.Fatalf("error = %v, want ErrInvalidGISResults", err)
+		}
+	})
+
+	t.Run("exact paper fraction stays exact", func(t *testing.T) {
+		paper := []countedBallot{
+			counted(rat(1, 3), ChoiceFor, ChoiceFor),
+			counted(rat(1, 3), ChoiceFor, ChoiceFor),
+		}
+		smallGIS := GISResults{
+			OnlineParticipantsM2: rat(1, 3),
+			Entries: []GISResultEntry{
+				{AgendaItemID: "officers", ForM2: rat(1, 3), AgainstM2: rat(0, 1), AbstainM2: rat(0, 1)},
+				{AgendaItemID: "cameras", ForM2: rat(1, 3), AgainstM2: rat(0, 1), AbstainM2: rat(0, 1)},
+			},
+		}
+		r, err := tally(rat(3, 2), paper, smallGIS, testAgenda)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.ParticipantsM2.Cmp(rat(1, 1)) != 0 || r.Items[0].ForM2.Cmp(rat(1, 1)) != 0 {
+			t.Fatalf("fractions were rounded: participants=%s, for=%s",
+				r.ParticipantsM2.RatString(), r.Items[0].ForM2.RatString())
+		}
+	})
 }
 
 // The demo fill reaches the quorum and 2/3 of all on a house like the demo one, keeps
@@ -121,7 +184,7 @@ func TestFillPlan(t *testing.T) {
 		for _, p := range plan {
 			all = append(all, countedBallot{ID: p.ID, WeightM2: weights[p.ID], Choices: p.Choices})
 		}
-		r, err := tally(total, all, testAgenda)
+		r, err := tally(total, all, GISResults{}, testAgenda)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -181,5 +244,49 @@ func TestOrderDecisions(t *testing.T) {
 		if _, err := orderDecisions(testAgenda, decisions); !errors.Is(err, ErrInvalidDecisions) {
 			t.Errorf("%s: %v, want ErrInvalidDecisions", name, err)
 		}
+	}
+}
+
+func TestOrderGISResults(t *testing.T) {
+	entry := func(id string, forM2, againstM2, abstainM2 int64) GISResultEntry {
+		return GISResultEntry{
+			AgendaItemID: id,
+			ForM2:        rat(forM2, 1),
+			AgainstM2:    rat(againstM2, 1),
+			AbstainM2:    rat(abstainM2, 1),
+		}
+	}
+	good := []GISResultEntry{entry("cameras", 60, 30, 10), entry("officers", 51, 39, 10)}
+	ordered, err := orderGISResults(testAgenda, good, rat(100, 1), rat(3000, 1))
+	if err != nil || ordered[0].AgendaItemID != "officers" || ordered[1].AgendaItemID != "cameras" {
+		t.Fatalf("ordered = %+v, %v; want the agenda order", ordered, err)
+	}
+
+	tests := map[string]struct {
+		entries      []GISResultEntry
+		participants *big.Rat
+		total        *big.Rat
+	}{
+		"missing question": {[]GISResultEntry{entry("officers", 51, 39, 10)}, rat(100, 1), rat(3000, 1)},
+		"question twice": {[]GISResultEntry{
+			entry("officers", 51, 39, 10), entry("officers", 50, 40, 10), entry("cameras", 60, 30, 10),
+		}, rat(100, 1), rat(3000, 1)},
+		"foreign question": {[]GISResultEntry{
+			entry("officers", 51, 39, 10), entry("other", 60, 30, 10),
+		}, rat(100, 1), rat(3000, 1)},
+		"negative area": {[]GISResultEntry{
+			entry("officers", -1, 91, 10), entry("cameras", 60, 30, 10),
+		}, rat(100, 1), rat(3000, 1)},
+		"wrong sum": {[]GISResultEntry{
+			entry("officers", 51, 39, 9), entry("cameras", 60, 30, 10),
+		}, rat(100, 1), rat(3000, 1)},
+		"participants exceed total": {good, rat(100, 1), rat(99, 1)},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := orderGISResults(testAgenda, tt.entries, tt.participants, tt.total); !errors.Is(err, ErrInvalidGISResults) {
+				t.Fatalf("error = %v, want ErrInvalidGISResults", err)
+			}
+		})
 	}
 }
