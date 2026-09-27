@@ -72,6 +72,8 @@ type Service struct {
 	registry   Registry
 	recipients Recipients
 	queue      Queue
+	// quietHoursOff sends mailings at night too (QUIET_HOURS=false); set once at start.
+	quietHoursOff bool
 }
 
 // NewService creates an initiatives service.
@@ -256,7 +258,7 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 
 	// Started in the evening, the poll reaches the owners in the morning (решение 29).
 	var runAt time.Time
-	if until, quiet := notify.QuietHoursEnd(time.Now(), house.Location()); quiet {
+	if until, quiet := s.quietHoursEnd(time.Now(), house.Location()); quiet {
 		runAt = until
 	}
 
@@ -290,7 +292,7 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 		// The poll closes by its term, and the initiator gets the result with the next
 		// step (решения 18, 77). A term at night is reported in the morning.
 		finishAt := pollEndsAt
-		if until, quiet := notify.QuietHoursEnd(pollEndsAt, house.Location()); quiet {
+		if until, quiet := s.quietHoursEnd(pollEndsAt, house.Location()); quiet {
 			finishAt = until
 		}
 		jobs = append(jobs, notify.Job{
@@ -313,6 +315,21 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 	current.TotalAreaCenti = snap.TotalAreaCenti
 
 	return current, nil
+}
+
+// SetQuietHours turns the quiet hours of mailings on or off (config QUIET_HOURS). Call
+// it once before serving; they are on by default.
+func (s *Service) SetQuietHours(on bool) {
+	s.quietHoursOff = !on
+}
+
+// quietHoursEnd is notify.QuietHoursEnd unless the quiet hours are turned off.
+func (s *Service) quietHoursEnd(t time.Time, loc *time.Location) (time.Time, bool) {
+	if s.quietHoursOff {
+		return time.Time{}, false
+	}
+
+	return notify.QuietHoursEnd(t, loc)
 }
 
 // invitees narrows the poll audience. In the demo house every tester confirms
