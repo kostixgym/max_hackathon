@@ -25,6 +25,12 @@ const (
 	TypeQuestionAsked = "question_asked"
 	// TypeQuestionAnswered relays the initiator's answer to the neighbour who asked.
 	TypeQuestionAnswered = "question_answered"
+
+	// Sprint to 30.09 (docs/plan-do-30-09.md): the data change enqueues the job in
+	// its own transaction, the bot (Костя) sends the messages.
+	TypeDemandDelivered  = "demand_delivered"  // требование передано в УК → сотрудникам УК
+	TypeMeetingCreated   = "meeting_created"   // собрание создано → собственникам дома
+	TypeMeetingFinalized = "meeting_finalized" // итог зафиксирован → инициатору и собственникам
 )
 
 // Job is one unit of background work.

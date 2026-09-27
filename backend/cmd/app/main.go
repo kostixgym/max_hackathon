@@ -125,6 +125,10 @@ func run() error {
 		PollProgress:     polls,
 		Votes:            polls,
 		DemoMembers:      users,
+
+		// Sprint to 30.09: the staff cabinet.
+		Orgs:      users,
+		OrgHouses: houses,
 	})
 
 	var wg sync.WaitGroup

@@ -50,6 +50,15 @@ type Deps struct {
 	PollProgress     PollProgress
 	Votes            Voter
 	DemoMembers      DemoMembership
+
+	// Sprint to 30.09: the staff cabinet (К2), demands (Дима, Д1–Д5) and meetings
+	// (Гоша, Г2–Г7). The Demands and Meetings interfaces live in demands.go and
+	// meetings.go: their owners add methods there and the wiring in main.go, this
+	// file stays as it is. A nil module keeps its routes at 501.
+	Orgs      Orgs
+	OrgHouses OrgHouses
+	Demands   Demands
+	Meetings  Meetings
 }
 
 // maxBodyBytes limits a request body: the largest one, an initiative with its
@@ -64,6 +73,7 @@ func NewHandler(d Deps) http.Handler {
 		access: d.Access, templates: d.Templates, initiatives: d.Initiatives,
 		initiativeReader: d.InitiativeReader, pollStarter: d.PollStarter,
 		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers,
+		orgs: d.Orgs, orgHouses: d.OrgHouses, demands: d.Demands, meetings: d.Meetings,
 	}
 
 	// Application logs are emitted through slog; Gin's debug route dump would
@@ -102,6 +112,28 @@ func NewHandler(d Deps) http.Handler {
 	protected.PUT("/initiatives/:id/my-vote", h.myVote)
 	protected.GET("/initiatives/:id/poll", h.pollProgressHandler)
 
+	// Sprint to 30.09 (К0): the routes of path A are final, the handlers of
+	// demand and meeting modules land with their steps (Д1–Д3, Г2–Г6) and answer
+	// 501 not_implemented until then.
+	protected.POST("/houses/:house/demo-staff", h.demoStaff)
+	protected.GET("/orgs", h.myOrgs)
+	protected.GET("/orgs/:orgID/houses", h.orgHousesList)
+	protected.GET("/orgs/:orgID/demands", h.orgDemands)
+	protected.POST("/initiatives/:id/demand", h.createDemand)
+	protected.GET("/demands/:id", h.getDemand)
+	protected.POST("/demands/:id/mark-delivered", h.markDemandDelivered)
+	protected.GET("/demands/:id/pdf", h.demandPDF)
+	protected.POST("/initiatives/:id/meetings", h.createMeeting)
+	protected.GET("/meetings/:id", h.getMeeting)
+	protected.GET("/meetings/:id/tracker", h.meetingTracker)
+	protected.POST("/meetings/:id/ballots/receive", h.receiveBallot)
+	protected.PUT("/ballots/:id/decisions", h.ballotDecisions)
+	protected.GET("/meetings/:id/result-preview", h.meetingResultPreview)
+	protected.POST("/meetings/:id/finalize", h.finalizeMeeting)
+	protected.GET("/meetings/:id/protocol.pdf", h.meetingProtocolPDF)
+	protected.POST("/meetings/:id/demo/finish-voting", h.demoFinishVoting)
+	protected.POST("/meetings/:id/demo/fill-ballots", h.demoFillBallots)
+
 	return router
 }
 
@@ -136,6 +168,12 @@ type handlers struct {
 	pollProgress     PollProgress
 	votes            Voter
 	demoMembers      DemoMembership
+
+	// Sprint to 30.09.
+	orgs      Orgs
+	orgHouses OrgHouses
+	demands   Demands
+	meetings  Meetings
 }
 
 func (h *handlers) healthz(c *gin.Context) {
@@ -166,6 +204,7 @@ type meResponse struct {
 	DevMode     bool             `json:"dev_mode"`
 	House       *houseJSON       `json:"house"`
 	Memberships []membershipJSON `json:"memberships"`
+	Orgs        []orgJSON        `json:"orgs"`
 }
 
 type meUser struct {
@@ -188,6 +227,7 @@ func (h *handlers) me(c *gin.Context) {
 		User:        meUser{ID: id.UserID, FirstName: id.FirstName},
 		DevMode:     h.devMode,
 		Memberships: make([]membershipJSON, 0),
+		Orgs:        make([]orgJSON, 0),
 	}
 
 	memberships, err := h.profiles.MembershipsByUser(c.Request.Context(), id.UserID)
@@ -199,6 +239,18 @@ func (h *handlers) me(c *gin.Context) {
 	}
 	for _, membership := range memberships {
 		resp.Memberships = append(resp.Memberships, toMembershipJSON(membership))
+	}
+
+	// The «Жилец / УК» switch: organizations the user works in (К2).
+	if h.orgs != nil {
+		orgs, err := h.orgs.OrgsByUser(c.Request.Context(), id.UserID)
+		if err != nil {
+			h.log.Error("list my orgs", "err", err)
+			writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить данные, попробуйте ещё раз")
+
+			return
+		}
+		resp.Orgs = toOrgsJSON(orgs)
 	}
 
 	if id.StartParam != "" {

@@ -82,7 +82,8 @@ func (r *PollResult) HandleJob(ctx context.Context, payload json.RawMessage) err
 	fmt.Fprintf(&b, "Проголосовало собственников: %d.\n\n", progress.VotesFor+progress.VotesAgainst)
 	demand := registry.FormatM2(progress.Thresholds().Demand)
 	if progress.DemandReached() {
-		fmt.Fprintf(&b, "<mark>Поддержки достаточно, чтобы потребовать от УК провести общее собрание</mark> "+
+		// <mark> is not visible in the MAX clients (render.go, проверка 26.09); bold is.
+		fmt.Fprintf(&b, "<b>Поддержки достаточно, чтобы потребовать от УК провести общее собрание</b> "+
 			"(ст. 45 ч. 6 ЖК): нужно не меньше 10%% площади дома — %s м².", demand)
 	} else {
 		fmt.Fprintf(&b, "Для требования в УК поддержки не хватило: нужно не меньше 10%% площади дома — %s м². "+
