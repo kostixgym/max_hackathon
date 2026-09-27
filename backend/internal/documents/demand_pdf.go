@@ -40,6 +40,9 @@ func DemandPDF(d DemandData) ([]byte, error) {
 	pdf.SetAutoPageBreak(true, 20)
 	pdf.AddPage()
 	pdf.AddUTF8FontFromBytes("DejaVu", "", FontSans())
+	// Жирное начертание регистрируется тем же файлом: для UTF8-шрифтов fpdf
+	// требует отдельную регистрацию стиля, иначе SetFont(..., "B") падает.
+	pdf.AddUTF8FontFromBytes("DejaVu", "B", FontSans())
 
 	if pdf.Err() {
 		return nil, fmt.Errorf("demand pdf: %w", pdf.Error())

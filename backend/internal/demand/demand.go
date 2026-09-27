@@ -217,6 +217,18 @@ func (s *Service) Create(ctx context.Context, initiativeID, byUserID, channel st
 	if !in.IsLedBy(byUserID) {
 		return Demand{}, ErrNotInitiator
 	}
+
+	// Повторное требование — «уже есть», независимо от стадии: так контракт
+	// отвечает и на «стадия ушла дальше», и на гонку двух одновременных созданий.
+	var exists bool
+	if err := s.pool.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM demands WHERE initiative_id = $1::uuid)`, initiativeID).Scan(&exists); err != nil {
+		return Demand{}, fmt.Errorf("check demand exists: %w", err)
+	}
+	if exists {
+		return Demand{}, ErrExists
+	}
+
 	if in.Stage != initiatives.StagePoll {
 		return Demand{}, fmt.Errorf("%w: %s", ErrWrongStage, in.Stage)
 	}
@@ -233,9 +245,11 @@ func (s *Service) Create(ctx context.Context, initiativeID, byUserID, channel st
 
 	var d Demand
 	err = s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		// Гонка двух создателей требования: SetStageTx требует стадию poll,
+		// проигравший получает ErrExists, а не сырую ошибку стадии.
 		err := s.initiatives.SetStageTx(ctx, tx, initiativeID, initiatives.StagePoll, initiatives.StageDemand, &pathA)
-		if errors.Is(err, ErrWrongStage) {
-			return ErrExists // гонка двух создателей требования
+		if errors.Is(err, initiatives.ErrWrongStage) {
+			return ErrExists
 		}
 		if err != nil {
 			return err

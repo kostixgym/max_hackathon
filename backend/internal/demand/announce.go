@@ -6,6 +6,7 @@ package demand
 
 import (
 	"context"
+	"math/big"
 	"time"
 )
 
@@ -52,6 +53,11 @@ func (s *Service) Announce(ctx context.Context, demandID string) (Announce, erro
 	}
 	thresholds := progress.Thresholds()
 
+	// Поддержка — та, что зафиксирована в требовании на момент создания (решение
+	// о фиксации дроби), а не живые цифры опроса: PDF и уведомление совпадают.
+	support := new(big.Rat).SetFrac64(d.SupportNum, d.SupportDen)
+	support.Quo(support, big.NewRat(100, 1))
+
 	deliveredAt := time.Time{}
 	if d.DeliveredAt != nil {
 		deliveredAt = *d.DeliveredAt
@@ -68,7 +74,7 @@ func (s *Service) Announce(ctx context.Context, demandID string) (Announce, erro
 		HouseAddress:    house.Address,
 		OrgName:         orgName,
 		InitiatorUserID: in.InitiatorUserID,
-		SupportM2:       progress.ForM2().FloatString(2),
+		SupportM2:       support.FloatString(2),
 		ThresholdM2:     thresholds.Demand.FloatString(2),
 		DeliveredAt:     deliveredAt,
 		UKDueAt:         dueAt,
