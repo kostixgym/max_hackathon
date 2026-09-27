@@ -25,10 +25,13 @@ type fakeMeetings struct {
 	view     meeting.View
 	tracker  meeting.Tracker
 	received meeting.ReceivedBallot
+	result   meeting.Result
+	final    meeting.Final
 	err      error
 
-	created meeting.CreateInput
-	viewer  string
+	created   meeting.CreateInput
+	viewer    string
+	decisions []meeting.Decision
 }
 
 func (f *fakeMeetings) Create(_ context.Context, in meeting.CreateInput) (meeting.View, error) {
@@ -49,6 +52,28 @@ func (f *fakeMeetings) Tracker(context.Context, string, string) (meeting.Tracker
 
 func (f *fakeMeetings) ReceiveBallot(context.Context, string, string, string) (meeting.ReceivedBallot, error) {
 	return f.received, f.err
+}
+
+func (f *fakeMeetings) RecordDecisions(_ context.Context, ballotID, _ string, d []meeting.Decision) (meeting.BallotDecisions, error) {
+	f.decisions = d
+
+	return meeting.BallotDecisions{BallotID: ballotID, Status: meeting.BallotCounted, Decisions: d}, f.err
+}
+
+func (f *fakeMeetings) Preview(context.Context, string, string) (meeting.Result, error) {
+	return f.result, f.err
+}
+
+func (f *fakeMeetings) Finalize(context.Context, string, string) (meeting.Final, error) {
+	return f.final, f.err
+}
+
+func (f *fakeMeetings) FinishVoting(context.Context, string, string) (meeting.View, error) {
+	return f.view, f.err
+}
+
+func (f *fakeMeetings) FillBallots(context.Context, string, string) (meeting.View, error) {
+	return f.view, f.err
 }
 
 func newMeetingServer(m *fakeMeetings) http.Handler {
@@ -158,6 +183,11 @@ func TestMeetingErrors(t *testing.T) {
 		{meeting.ErrInvalidOfficers, http.StatusBadRequest, "invalid_officers"},
 		{meeting.ErrAlreadyReceived, http.StatusConflict, "already_received"},
 		{meeting.ErrVotingFinished, http.StatusConflict, "voting_finished"},
+		{meeting.ErrVotingNotFinished, http.StatusConflict, "voting_not_finished"},
+		{meeting.ErrAlreadyFinalized, http.StatusConflict, "already_finalized"},
+		{meeting.ErrBallotNotReceived, http.StatusConflict, "ballot_not_received"},
+		{meeting.ErrInvalidDecisions, http.StatusBadRequest, "invalid_request"},
+		{meeting.ErrNotDemo, http.StatusForbidden, "not_demo"},
 		{errors.New("connection reset"), http.StatusInternalServerError, "internal"},
 	}
 	for _, tt := range tests {
@@ -229,16 +259,84 @@ func TestMeetingReadAndBallots(t *testing.T) {
 		t.Fatalf("receive without a ballot: %d %s", rec.Code, rec.Body)
 	}
 
-	// Until Г4–Г6 land, their routes stay 501 even with the module wired.
-	for _, route := range []struct{ method, target string }{
-		{http.MethodPut, "/api/v1/ballots/b-1/decisions"},
-		{http.MethodGet, "/api/v1/meetings/m-1/result-preview"},
-		{http.MethodPost, "/api/v1/meetings/m-1/finalize"},
-		{http.MethodPost, "/api/v1/meetings/m-1/demo/finish-voting"},
-		{http.MethodPost, "/api/v1/meetings/m-1/demo/fill-ballots"},
+}
+
+func sampleResult() meeting.Result {
+	return meeting.Result{
+		ParticipantsM2: big.NewRat(2400, 1), TotalM2: big.NewRat(3000, 1), QuorumReached: true,
+		Items: []meeting.ItemResult{{
+			AgendaItemID: "a-1", Position: 1, Text: "Установить видеонаблюдение", MajorityRule: "two_thirds_of_all",
+			ForM2: big.NewRat(2040, 1), AgainstM2: big.NewRat(300, 1), AbstainM2: big.NewRat(60, 1), Accepted: true,
+		}},
+	}
+}
+
+func TestMeetingCountAndResult(t *testing.T) {
+	fake := &fakeMeetings{
+		view:   sampleMeetingView(),
+		result: sampleResult(),
+		final: meeting.Final{MeetingID: "m-1", Outcome: meeting.OutcomeHeld,
+			FinalizedAt: time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC), Result: sampleResult()},
+	}
+	h := newMeetingServer(fake)
+
+	rec := callJSON(h, http.MethodPut, "/api/v1/ballots/b-1/decisions",
+		`{"decisions": [{"agenda_item_id": "a-1", "choice": "for"}, {"agenda_item_id": "a-2", "choice": "abstain"}]}`)
+	if rec.Code != http.StatusOK || len(fake.decisions) != 2 || fake.decisions[1].Choice != meeting.ChoiceAbstain ||
+		!strings.Contains(rec.Body.String(), `"status":"counted"`) {
+		t.Fatalf("decisions: %d %s (module got %+v)", rec.Code, rec.Body, fake.decisions)
+	}
+	for _, body := range []string{
+		`{"decisions": []}`,
+		`{"decisions": [{"agenda_item_id": "a-1", "choice": "yes"}]}`,
+		`{"decisions": [{"choice": "for"}]}`,
 	} {
-		if rec := callJSON(h, route.method, route.target, `{}`); rec.Code != http.StatusNotImplemented {
-			t.Fatalf("%s %s: %d", route.method, route.target, rec.Code)
+		rec := callJSON(h, http.MethodPut, "/api/v1/ballots/b-1/decisions", body)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "invalid_request") {
+			t.Fatalf("decisions %s: %d %s", body, rec.Code, rec.Body)
+		}
+	}
+
+	rec = callJSON(h, http.MethodGet, "/api/v1/meetings/m-1/result-preview", "")
+	var preview struct {
+		ParticipantsM2 string `json:"participants_m2"`
+		QuorumReached  bool   `json:"quorum_reached"`
+		AgendaResults  []struct {
+			ForM2     string `json:"for_m2"`
+			AbstainM2 string `json:"abstain_m2"`
+			Accepted  bool   `json:"accepted"`
+		} `json:"agenda_results"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &preview)
+	if rec.Code != http.StatusOK || preview.ParticipantsM2 != "2400.00" || !preview.QuorumReached ||
+		len(preview.AgendaResults) != 1 || preview.AgendaResults[0].ForM2 != "2040.00" ||
+		preview.AgendaResults[0].AbstainM2 != "60.00" || !preview.AgendaResults[0].Accepted {
+		t.Fatalf("preview: %d %s", rec.Code, rec.Body)
+	}
+
+	rec = callJSON(h, http.MethodPost, "/api/v1/meetings/m-1/finalize", "")
+	var final struct {
+		MeetingID   string `json:"meeting_id"`
+		Outcome     string `json:"outcome"`
+		FinalizedAt string `json:"finalized_at"`
+		Results     []struct {
+			Accepted bool `json:"accepted"`
+		} `json:"results"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &final)
+	if rec.Code != http.StatusOK || final.MeetingID != "m-1" || final.Outcome != "held" ||
+		final.FinalizedAt != "2026-10-26T10:00:00Z" || len(final.Results) != 1 || !final.Results[0].Accepted {
+		t.Fatalf("finalize: %d %s", rec.Code, rec.Body)
+	}
+
+	for _, target := range []string{"/api/v1/meetings/m-1/demo/finish-voting", "/api/v1/meetings/m-1/demo/fill-ballots"} {
+		rec := callJSON(h, http.MethodPost, target, "")
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"id":"m-1"`) {
+			t.Fatalf("%s: %d %s", target, rec.Code, rec.Body)
+		}
+		rec = callJSON(newMeetingServer(&fakeMeetings{err: meeting.ErrNotDemo}), http.MethodPost, target, "")
+		if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "not_demo") {
+			t.Fatalf("%s in a real house: %d %s", target, rec.Code, rec.Body)
 		}
 	}
 }

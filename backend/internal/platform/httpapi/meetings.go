@@ -22,6 +22,11 @@ type Meetings interface {
 	Get(ctx context.Context, meetingID, viewerID string) (meeting.View, error)
 	Tracker(ctx context.Context, meetingID, viewerID string) (meeting.Tracker, error)
 	ReceiveBallot(ctx context.Context, meetingID, ballotID, byUserID string) (meeting.ReceivedBallot, error)
+	RecordDecisions(ctx context.Context, ballotID, byUserID string, decisions []meeting.Decision) (meeting.BallotDecisions, error)
+	Preview(ctx context.Context, meetingID, viewerID string) (meeting.Result, error)
+	Finalize(ctx context.Context, meetingID, byUserID string) (meeting.Final, error)
+	FinishVoting(ctx context.Context, meetingID, byUserID string) (meeting.View, error)
+	FillBallots(ctx context.Context, meetingID, byUserID string) (meeting.View, error)
 }
 
 func (h *handlers) createMeeting(c *gin.Context) {
@@ -152,24 +157,140 @@ func (h *handlers) receiveBallot(c *gin.Context) {
 }
 
 func (h *handlers) ballotDecisions(c *gin.Context) {
-	notImplemented(c, "Внесение решений появится вместе с модулем собрания (Г4)")
+	if h.meetings == nil {
+		notImplemented(c, "Внесение решений появится вместе с модулем собрания (Г4)")
+
+		return
+	}
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+
+	var body struct {
+		Decisions []struct {
+			AgendaItemID string `json:"agenda_item_id" binding:"required"`
+			Choice       string `json:"choice" binding:"required,oneof=for against abstain"`
+		} `json:"decisions" binding:"required,min=1,dive"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", decisionsMessage)
+
+		return
+	}
+	decisions := make([]meeting.Decision, 0, len(body.Decisions))
+	for _, d := range body.Decisions {
+		decisions = append(decisions, meeting.Decision{AgendaItemID: d.AgendaItemID, Choice: d.Choice})
+	}
+
+	counted, err := h.meetings.RecordDecisions(c.Request.Context(), c.Param("id"), id.UserID, decisions)
+	if err != nil {
+		h.writeMeetingError(c, err, "record ballot decisions")
+
+		return
+	}
+
+	j := ballotDecisionsJSON{BallotID: counted.BallotID, Status: counted.Status,
+		Decisions: make([]decisionJSON, 0, len(counted.Decisions))}
+	for _, d := range counted.Decisions {
+		j.Decisions = append(j.Decisions, decisionJSON{AgendaItemID: d.AgendaItemID, Choice: d.Choice})
+	}
+	writeJSON(c, http.StatusOK, j)
 }
 
 func (h *handlers) meetingResultPreview(c *gin.Context) {
-	notImplemented(c, "Предпросмотр итога появится вместе с модулем собрания (Г5)")
+	if h.meetings == nil {
+		notImplemented(c, "Предпросмотр итога появится вместе с модулем собрания (Г5)")
+
+		return
+	}
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+
+	result, err := h.meetings.Preview(c.Request.Context(), c.Param("id"), id.UserID)
+	if err != nil {
+		h.writeMeetingError(c, err, "meeting result preview")
+
+		return
+	}
+
+	writeJSON(c, http.StatusOK, toResultJSON(result))
 }
 
 func (h *handlers) finalizeMeeting(c *gin.Context) {
-	notImplemented(c, "Фиксация итога появится вместе с модулем собрания (Г5)")
+	if h.meetings == nil {
+		notImplemented(c, "Фиксация итога появится вместе с модулем собрания (Г5)")
+
+		return
+	}
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+
+	final, err := h.meetings.Finalize(c.Request.Context(), c.Param("id"), id.UserID)
+	if err != nil {
+		h.writeMeetingError(c, err, "finalize meeting")
+
+		return
+	}
+
+	result := toResultJSON(final.Result)
+	writeJSON(c, http.StatusOK, finalJSON{
+		MeetingID: final.MeetingID, Outcome: final.Outcome, FinalizedAt: final.FinalizedAt,
+		ParticipantsM2: result.ParticipantsM2, TotalM2: result.TotalM2, QuorumReached: result.QuorumReached,
+		Results: result.AgendaResults,
+	})
 }
 
 func (h *handlers) demoFinishVoting(c *gin.Context) {
-	notImplemented(c, "Демо-ускорители появятся вместе с модулем собрания (Г6)")
+	if h.meetings == nil {
+		notImplemented(c, "Демо-ускорители появятся вместе с модулем собрания (Г6)")
+
+		return
+	}
+	h.demoAccelerator(c, "finish voting", h.meetings.FinishVoting)
 }
 
 func (h *handlers) demoFillBallots(c *gin.Context) {
-	notImplemented(c, "Демо-ускорители появятся вместе с модулем собрания (Г6)")
+	if h.meetings == nil {
+		notImplemented(c, "Демо-ускорители появятся вместе с модулем собрания (Г6)")
+
+		return
+	}
+	h.demoAccelerator(c, "fill ballots", h.meetings.FillBallots)
 }
+
+// demoAccelerator runs a demo accelerator of the meeting and answers with its card.
+func (h *handlers) demoAccelerator(c *gin.Context, what string,
+	run func(ctx context.Context, meetingID, byUserID string) (meeting.View, error),
+) {
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+
+	view, err := run(c.Request.Context(), c.Param("id"), id.UserID)
+	if err != nil {
+		h.writeMeetingError(c, err, what)
+
+		return
+	}
+
+	writeJSON(c, http.StatusOK, toMeetingJSON(view))
+}
+
+const decisionsMessage = "Отметьте решение по каждому вопросу повестки: за, против или воздержался"
 
 // writeMeetingError maps the errors of the meeting module to the contract codes.
 func (h *handlers) writeMeetingError(c *gin.Context, err error, what string) {
@@ -204,6 +325,18 @@ func (h *handlers) writeMeetingError(c *gin.Context, err error, what string) {
 	case errors.Is(err, meeting.ErrVotingFinished):
 		writeError(c, http.StatusConflict, "voting_finished",
 			"Голосование окончено: бюллетени после его окончания не учитываются")
+	case errors.Is(err, meeting.ErrVotingNotFinished):
+		writeError(c, http.StatusConflict, "voting_not_finished",
+			"Голосование ещё идёт: решения вносятся и итог фиксируется после его окончания")
+	case errors.Is(err, meeting.ErrAlreadyFinalized):
+		writeError(c, http.StatusConflict, "already_finalized", "Итог уже зафиксирован, изменить его нельзя")
+	case errors.Is(err, meeting.ErrBallotNotReceived):
+		writeError(c, http.StatusConflict, "ballot_not_received",
+			"Бюллетень не отмечен полученным до окончания голосования и не учитывается")
+	case errors.Is(err, meeting.ErrInvalidDecisions):
+		writeError(c, http.StatusBadRequest, "invalid_request", decisionsMessage)
+	case errors.Is(err, meeting.ErrNotDemo):
+		writeError(c, http.StatusForbidden, "not_demo", "Ускорители работают только в демо-доме")
 	default:
 		h.log.Error(what, "err", err)
 		writeError(c, http.StatusInternalServerError, "internal", "Не удалось выполнить действие, попробуйте ещё раз")
@@ -350,4 +483,58 @@ type receivedBallotJSON struct {
 	BallotID   string    `json:"ballot_id"`
 	Status     string    `json:"status"`
 	ReceivedAt time.Time `json:"received_at"`
+}
+
+type decisionJSON struct {
+	AgendaItemID string `json:"agenda_item_id"`
+	Choice       string `json:"choice"`
+}
+
+type ballotDecisionsJSON struct {
+	BallotID  string         `json:"ballot_id"`
+	Status    string         `json:"status"`
+	Decisions []decisionJSON `json:"decisions"`
+}
+
+type resultJSON struct {
+	ParticipantsM2 string             `json:"participants_m2"`
+	TotalM2        string             `json:"total_m2"`
+	QuorumReached  bool               `json:"quorum_reached"`
+	AgendaResults  []agendaResultJSON `json:"agenda_results"`
+}
+
+type agendaResultJSON struct {
+	AgendaItemID string `json:"agenda_item_id"`
+	Position     int    `json:"position"`
+	Text         string `json:"text"`
+	MajorityRule string `json:"majority_rule"`
+	ForM2        string `json:"for_m2"`
+	AgainstM2    string `json:"against_m2"`
+	AbstainM2    string `json:"abstain_m2"`
+	Accepted     bool   `json:"accepted"`
+}
+
+func toResultJSON(r meeting.Result) resultJSON {
+	j := resultJSON{
+		ParticipantsM2: m2(r.ParticipantsM2), TotalM2: m2(r.TotalM2), QuorumReached: r.QuorumReached,
+		AgendaResults: make([]agendaResultJSON, 0, len(r.Items)),
+	}
+	for _, item := range r.Items {
+		j.AgendaResults = append(j.AgendaResults, agendaResultJSON{
+			AgendaItemID: item.AgendaItemID, Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
+			ForM2: m2(item.ForM2), AgainstM2: m2(item.AgainstM2), AbstainM2: m2(item.AbstainM2), Accepted: item.Accepted,
+		})
+	}
+
+	return j
+}
+
+type finalJSON struct {
+	MeetingID      string             `json:"meeting_id"`
+	Outcome        string             `json:"outcome"`
+	FinalizedAt    time.Time          `json:"finalized_at"`
+	ParticipantsM2 string             `json:"participants_m2"`
+	TotalM2        string             `json:"total_m2"`
+	QuorumReached  bool               `json:"quorum_reached"`
+	Results        []agendaResultJSON `json:"results"`
 }
