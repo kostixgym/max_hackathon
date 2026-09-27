@@ -23,6 +23,8 @@ import (
 
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/bot"
+	"maxhackathon/backend/internal/demand"
+	"maxhackathon/backend/internal/documents"
 	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/meeting"
 	"maxhackathon/backend/internal/notify"
@@ -93,6 +95,7 @@ func run() error {
 	}
 	polls := poll.NewStore(pool, initService, users, houses)
 	meetings := meeting.NewService(pool, tm, initService, users, houses, notifier)
+	demands := demand.NewService(pool, tm, initService, polls, users, meetings, houses, users, documents.DemandPDF, notifier)
 
 	// Decision types and templates are platform data, not demo data (решение 9):
 	// without them no initiative can be created, so they are seeded on every start.
@@ -136,6 +139,7 @@ func run() error {
 		Orgs:      users,
 		OrgHouses: houses,
 		Meetings:  meetings,
+		Demands:   demands,
 	})
 
 	var wg sync.WaitGroup
@@ -154,6 +158,11 @@ func run() error {
 				accounts:         users,
 				notifier:         notifier,
 				devMode:          cfg.DevMode,
+				demandsAnnounce:  demands,
+				staff:            users,
+				meetingsView:     meetings,
+				protocol:         meetings,
+				owners:           users,
 			}, log)
 		})
 	}
@@ -207,6 +216,13 @@ type botDeps struct {
 	accounts         bot.Accounts
 	notifier         botNotifier
 	devMode          bool
+
+	// К3: уведомления о требовании и собрании.
+	demandsAnnounce bot.DemandAnnouncer
+	staff           bot.StaffNotifiees
+	meetingsView    bot.MeetingBotView
+	protocol        bot.ProtocolReader
+	owners          bot.OwnerNotifiees
 }
 
 // botNotifier is everything the bot runtime needs from the notify module:
@@ -275,6 +291,25 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 		Accounts:    deps.accounts,
 		Me:          identity,
 	}
+	demandDelivered := &bot.DemandDeliveredNotifier{
+		Messages: api.Messages,
+		Announce: deps.demandsAnnounce,
+		Staff:    deps.staff,
+		Log:      log,
+	}
+	meetingCreated := &bot.MeetingCreatedNotifier{
+		Messages: api.Messages,
+		View:     deps.meetingsView,
+		Owners:   deps.owners,
+		Log:      log,
+	}
+	meetingFinalized := &bot.MeetingFinalizedNotifier{
+		Messages: api.Messages,
+		View:     deps.meetingsView,
+		Protocol: deps.protocol,
+		Owners:   deps.owners,
+		Log:      log,
+	}
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
@@ -285,6 +320,9 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 				notify.TypePollFinished:     result.HandleJob,
 				notify.TypeQuestionAsked:    relay.HandleAsked,
 				notify.TypeQuestionAnswered: relay.HandleAnswered,
+				notify.TypeDemandDelivered:  demandDelivered.HandleJob,
+				notify.TypeMeetingCreated:   meetingCreated.HandleJob,
+				notify.TypeMeetingFinalized: meetingFinalized.HandleJob,
 			},
 			Log: log,
 		}
