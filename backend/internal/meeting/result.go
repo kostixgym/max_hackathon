@@ -43,14 +43,33 @@ type countedBallot struct {
 	Choices  map[string]string
 }
 
-// tally counts the result by the Housing Code: the participants are the owners of
-// the counted ballots, the quorum is more than half of all votes (ст. 45 ч. 3 ЖК),
-// and a question is accepted by the majority of its decision type (rules.Passed),
-// only with the quorum. All sums are exact: shares like 1/3 are never rounded.
-func tally(total *big.Rat, ballots []countedBallot, agenda []initiatives.AgendaItem) (Result, error) {
-	r := Result{ParticipantsM2: new(big.Rat), TotalM2: total, Items: make([]ItemResult, 0, len(agenda))}
+// tally counts the official result by the Housing Code: the participants and votes
+// are the GIS aggregates plus the counted paper ballots. The quorum is more than
+// half of all votes (ст. 45 ч. 3 ЖК), and a question is accepted by the majority of
+// its decision type (rules.Passed), only with the quorum. All sums are exact.
+func tally(total *big.Rat, ballots []countedBallot, gis GISResults, agenda []initiatives.AgendaItem) (Result, error) {
+	if gis.OnlineParticipantsM2 == nil {
+		gis.OnlineParticipantsM2 = new(big.Rat)
+	}
+	orderedGIS, err := orderGISResults(agenda, gis.Entries, gis.OnlineParticipantsM2, total)
+	if err != nil {
+		return Result{}, err
+	}
+	byItem := make(map[string]GISResultEntry, len(orderedGIS))
+	for _, entry := range orderedGIS {
+		byItem[entry.AgendaItemID] = entry
+	}
+
+	r := Result{
+		ParticipantsM2: new(big.Rat).Set(gis.OnlineParticipantsM2),
+		TotalM2:        total,
+		Items:          make([]ItemResult, 0, len(agenda)),
+	}
 	for _, b := range ballots {
 		r.ParticipantsM2.Add(r.ParticipantsM2, b.WeightM2)
+	}
+	if r.ParticipantsM2.Cmp(total) > 0 {
+		return Result{}, fmt.Errorf("%w: all participants exceed the registry area", ErrInvalidGISResults)
 	}
 	r.QuorumReached = rules.QuorumReached(total, r.ParticipantsM2)
 
@@ -62,6 +81,11 @@ func tally(total *big.Rat, ballots []countedBallot, agenda []initiatives.AgendaI
 		ir := ItemResult{
 			AgendaItemID: item.ID, Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
 			ForM2: new(big.Rat), AgainstM2: new(big.Rat), AbstainM2: new(big.Rat),
+		}
+		if entry, ok := byItem[item.ID]; ok {
+			ir.ForM2.Set(entry.ForM2)
+			ir.AgainstM2.Set(entry.AgainstM2)
+			ir.AbstainM2.Set(entry.AbstainM2)
 		}
 		for _, b := range ballots {
 			switch b.Choices[item.ID] {
@@ -137,8 +161,12 @@ func (s *Service) Preview(ctx context.Context, meetingID, viewerID string) (Resu
 	if err != nil {
 		return Result{}, err
 	}
+	gis, err := s.gisResults(ctx, s.pool, l.meeting.ID)
+	if err != nil {
+		return Result{}, err
+	}
 
-	return tally(registry.CentiToM2(l.initiative.TotalAreaCenti), counted, l.initiative.AgendaItems)
+	return tally(registry.CentiToM2(l.initiative.TotalAreaCenti), counted, gis, l.initiative.AgendaItems)
 }
 
 // Final is the fixed result of a meeting.
@@ -182,7 +210,11 @@ func (s *Service) Finalize(ctx context.Context, meetingID, byUserID string) (Fin
 		if err != nil {
 			return err
 		}
-		if f.Result, err = tally(total, counted, l.initiative.AgendaItems); err != nil {
+		gis, err := s.gisResults(ctx, tx, l.meeting.ID)
+		if err != nil {
+			return err
+		}
+		if f.Result, err = tally(total, counted, gis, l.initiative.AgendaItems); err != nil {
 			return err
 		}
 		f.Outcome = OutcomeNoQuorum

@@ -84,6 +84,11 @@ var (
 	// ErrInvalidDecisions means the decisions of a ballot do not cover every agenda
 	// question exactly once with a known choice.
 	ErrInvalidDecisions = errors.New("decisions must cover every agenda question once")
+	// ErrInvalidGISResults means the official online aggregates are incomplete,
+	// inconsistent or outside the area of the registry snapshot.
+	ErrInvalidGISResults = errors.New("invalid GIS results")
+	// ErrGISResultsNotAllowed means that the meeting has no online GIS channel.
+	ErrGISResultsNotAllowed = errors.New("GIS results are not allowed for this meeting form")
 	// ErrNotDemo means the action exists only in the demo house.
 	ErrNotDemo = errors.New("available only in the demo house")
 )

@@ -8,7 +8,9 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"math/big"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,6 +25,7 @@ type Meetings interface {
 	Tracker(ctx context.Context, meetingID, viewerID string) (meeting.Tracker, error)
 	ReceiveBallot(ctx context.Context, meetingID, ballotID, byUserID string) (meeting.ReceivedBallot, error)
 	RecordDecisions(ctx context.Context, ballotID, byUserID string, decisions []meeting.Decision) (meeting.BallotDecisions, error)
+	RecordGISResults(ctx context.Context, meetingID, byUserID string, input meeting.GISResults) (meeting.GISResults, error)
 	Preview(ctx context.Context, meetingID, viewerID string) (meeting.Result, error)
 	Finalize(ctx context.Context, meetingID, byUserID string) (meeting.Final, error)
 	FinishVoting(ctx context.Context, meetingID, byUserID string) (meeting.View, error)
@@ -200,6 +203,60 @@ func (h *handlers) ballotDecisions(c *gin.Context) {
 	writeJSON(c, http.StatusOK, j)
 }
 
+func (h *handlers) meetingGISResults(c *gin.Context) {
+	if h.meetings == nil {
+		notImplemented(c, "Результаты ГИС ЖКХ появятся вместе с модулем собрания (Г8)")
+
+		return
+	}
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+
+		return
+	}
+
+	var body gisResultsJSON
+	if err := c.ShouldBindJSON(&body); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", gisResultsMessage)
+
+		return
+	}
+	input := meeting.GISResults{Entries: make([]meeting.GISResultEntry, 0, len(body.Entries))}
+	var valid bool
+	input.OnlineParticipantsM2, valid = parseM2Input(body.OnlineParticipantsM2)
+	if !valid {
+		writeError(c, http.StatusBadRequest, "invalid_request", gisResultsMessage)
+
+		return
+	}
+	for _, entry := range body.Entries {
+		forM2, forOK := parseM2Input(entry.ForM2)
+		againstM2, againstOK := parseM2Input(entry.AgainstM2)
+		abstainM2, abstainOK := parseM2Input(entry.AbstainM2)
+		if !forOK || !againstOK || !abstainOK {
+			writeError(c, http.StatusBadRequest, "invalid_request", gisResultsMessage)
+
+			return
+		}
+		input.Entries = append(input.Entries, meeting.GISResultEntry{
+			AgendaItemID: entry.AgendaItemID,
+			ForM2:        forM2,
+			AgainstM2:    againstM2,
+			AbstainM2:    abstainM2,
+		})
+	}
+
+	saved, err := h.meetings.RecordGISResults(c.Request.Context(), c.Param("id"), id.UserID, input)
+	if err != nil {
+		h.writeMeetingError(c, err, "record GIS results")
+
+		return
+	}
+
+	writeJSON(c, http.StatusOK, toGISResultsJSON(saved))
+}
+
 func (h *handlers) meetingResultPreview(c *gin.Context) {
 	if h.meetings == nil {
 		notImplemented(c, "Предпросмотр итога появится вместе с модулем собрания (Г5)")
@@ -290,7 +347,10 @@ func (h *handlers) demoAccelerator(c *gin.Context, what string,
 	writeJSON(c, http.StatusOK, toMeetingJSON(view))
 }
 
-const decisionsMessage = "Отметьте решение по каждому вопросу повестки: за, против или воздержался"
+const (
+	decisionsMessage  = "Отметьте решение по каждому вопросу повестки: за, против или воздержался"
+	gisResultsMessage = "Укажите результаты ГИС по всем вопросам и площадь онлайн-участников в м²"
+)
 
 // writeMeetingError maps the errors of the meeting module to the contract codes.
 func (h *handlers) writeMeetingError(c *gin.Context, err error, what string) {
@@ -335,6 +395,12 @@ func (h *handlers) writeMeetingError(c *gin.Context, err error, what string) {
 			"Бюллетень не отмечен полученным до окончания голосования и не учитывается")
 	case errors.Is(err, meeting.ErrInvalidDecisions):
 		writeError(c, http.StatusBadRequest, "invalid_request", decisionsMessage)
+	case errors.Is(err, meeting.ErrInvalidGISResults):
+		writeError(c, http.StatusBadRequest, "invalid_gis_results",
+			"Результаты ГИС должны содержать все вопросы, а суммы голосов — совпадать с площадью участников")
+	case errors.Is(err, meeting.ErrGISResultsNotAllowed):
+		writeError(c, http.StatusConflict, "gis_results_not_allowed",
+			"Результаты ГИС доступны только для электронного собрания в ГИС ЖКХ")
 	case errors.Is(err, meeting.ErrNotDemo):
 		writeError(c, http.StatusForbidden, "not_demo", "Ускорители работают только в демо-доме")
 	default:
@@ -494,6 +560,67 @@ type ballotDecisionsJSON struct {
 	BallotID  string         `json:"ballot_id"`
 	Status    string         `json:"status"`
 	Decisions []decisionJSON `json:"decisions"`
+}
+
+type gisResultEntryJSON struct {
+	AgendaItemID string `json:"agenda_item_id" binding:"required"`
+	ForM2        string `json:"for_m2" binding:"required"`
+	AgainstM2    string `json:"against_m2" binding:"required"`
+	AbstainM2    string `json:"abstain_m2" binding:"required"`
+}
+
+type gisResultsJSON struct {
+	Entries              []gisResultEntryJSON `json:"entries" binding:"required,min=1,dive"`
+	OnlineParticipantsM2 string               `json:"online_participants_m2" binding:"required"`
+}
+
+func toGISResultsJSON(results meeting.GISResults) gisResultsJSON {
+	j := gisResultsJSON{
+		Entries:              make([]gisResultEntryJSON, 0, len(results.Entries)),
+		OnlineParticipantsM2: m2(results.OnlineParticipantsM2),
+	}
+	for _, entry := range results.Entries {
+		j.Entries = append(j.Entries, gisResultEntryJSON{
+			AgendaItemID: entry.AgendaItemID,
+			ForM2:        m2(entry.ForM2),
+			AgainstM2:    m2(entry.AgainstM2),
+			AbstainM2:    m2(entry.AbstainM2),
+		})
+	}
+
+	return j
+}
+
+// parseM2Input accepts only a non-negative decimal with at most two fractional
+// digits. It intentionally rejects exponent and fraction syntax accepted by big.Rat.
+func parseM2Input(value string) (*big.Rat, bool) {
+	whole, fraction, hasFraction := strings.Cut(value, ".")
+	if !decimalDigits(whole) || (hasFraction && (!decimalDigits(fraction) || len(fraction) > 2)) {
+		return nil, false
+	}
+	parsed, ok := new(big.Rat).SetString(value)
+	if !ok || parsed.Sign() < 0 {
+		return nil, false
+	}
+	centi := new(big.Rat).Mul(parsed, big.NewRat(100, 1))
+	if centi.Denom().Cmp(big.NewInt(1)) != 0 || !centi.Num().IsInt64() {
+		return nil, false
+	}
+
+	return parsed, true
+}
+
+func decimalDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+
+	return true
 }
 
 type resultJSON struct {
