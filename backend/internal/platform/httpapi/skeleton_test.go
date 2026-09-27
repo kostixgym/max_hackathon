@@ -72,11 +72,6 @@ func newSkeletonServer(orgs fakeOrgs) http.Handler {
 func TestSkeletonRoutesNotImplemented(t *testing.T) {
 	h := newSkeletonServer(fakeOrgs{})
 	empty := []struct{ method, target string }{
-		{http.MethodGet, "/api/v1/orgs/00000000-0000-7000-8000-000000000001/demands"},
-		{http.MethodPost, "/api/v1/initiatives/i-1/demand"},
-		{http.MethodGet, "/api/v1/demands/d-1"},
-		{http.MethodPost, "/api/v1/demands/d-1/mark-delivered"},
-		{http.MethodGet, "/api/v1/demands/d-1/pdf"},
 		{http.MethodPost, "/api/v1/initiatives/i-1/meetings"},
 		{http.MethodGet, "/api/v1/meetings/m-1"},
 		{http.MethodGet, "/api/v1/meetings/m-1/tracker"},

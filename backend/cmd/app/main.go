@@ -23,6 +23,8 @@ import (
 
 	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/bot"
+	"maxhackathon/backend/internal/demand"
+	"maxhackathon/backend/internal/documents"
 	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/meeting"
 	"maxhackathon/backend/internal/notify"
@@ -93,6 +95,7 @@ func run() error {
 	}
 	polls := poll.NewStore(pool, initService, users, houses)
 	meetings := meeting.NewService(pool, tm, initService, users, houses, notifier)
+	demands := demand.NewService(pool, tm, initService, polls, users, meetings, houses, users, documents.DemandPDF)
 
 	// Decision types and templates are platform data, not demo data (решение 9):
 	// without them no initiative can be created, so they are seeded on every start.
@@ -136,6 +139,7 @@ func run() error {
 		Orgs:      users,
 		OrgHouses: houses,
 		Meetings:  meetings,
+		Demands:   demands,
 	})
 
 	var wg sync.WaitGroup
