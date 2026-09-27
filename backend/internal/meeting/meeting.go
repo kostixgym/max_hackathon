@@ -73,6 +73,32 @@ var (
 	// ErrVotingFinished means the voting is over: a paper ballot received after its end
 	// does not count.
 	ErrVotingFinished = errors.New("voting has finished")
+	// ErrVotingNotFinished means the voting is still on: nothing is counted before its end.
+	ErrVotingNotFinished = errors.New("voting has not finished")
+	// ErrAlreadyFinalized means the result is fixed and nothing changes any more.
+	ErrAlreadyFinalized = errors.New("the result is already fixed")
+	// ErrNotFinalized means the result is not fixed yet.
+	ErrNotFinalized = errors.New("the result is not fixed yet")
+	// ErrBallotNotReceived means the paper ballot was not handed in during the voting.
+	ErrBallotNotReceived = errors.New("the paper ballot is not received")
+	// ErrInvalidDecisions means the decisions of a ballot do not cover every agenda
+	// question exactly once with a known choice.
+	ErrInvalidDecisions = errors.New("decisions must cover every agenda question once")
+	// ErrNotDemo means the action exists only in the demo house.
+	ErrNotDemo = errors.New("available only in the demo house")
+)
+
+// Choices of a ballot decision.
+const (
+	ChoiceFor     = "for"
+	ChoiceAgainst = "against"
+	ChoiceAbstain = "abstain"
+)
+
+// Outcomes of a fixed meeting.
+const (
+	OutcomeHeld     = "held"
+	OutcomeNoQuorum = "no_quorum"
 )
 
 // Initiatives is the initiatives module: a meeting belongs to an initiative and moves
