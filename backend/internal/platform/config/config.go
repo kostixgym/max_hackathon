@@ -30,6 +30,11 @@ type Config struct {
 	// Must never be enabled on a server reachable by real users.
 	DevMode bool
 
+	// QuietHours holds poll invitations, poll results and question relays from 22:00
+	// to 09:00 of the house (решение 29). false sends them at once: for testing in
+	// the evening.
+	QuietHours bool
+
 	// SeedDemo creates the synthetic demo house on start if it does not exist.
 	SeedDemo bool
 	// DemoInviteSlug is the invite slug of the demo house. Empty value makes the
@@ -52,6 +57,9 @@ func Load() (Config, error) {
 
 	var err error
 	if c.DevMode, err = envBool("DEV_MODE", false); err != nil {
+		return c, err
+	}
+	if c.QuietHours, err = envBool("QUIET_HOURS", true); err != nil {
 		return c, err
 	}
 	if c.SeedDemo, err = envBool("SEED_DEMO", true); err != nil {

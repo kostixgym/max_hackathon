@@ -211,7 +211,7 @@ func (s *Service) relayTime(ctx context.Context, houseID string) (time.Time, err
 	if err != nil {
 		return time.Time{}, err
 	}
-	if until, quiet := notify.QuietHoursEnd(time.Now(), house.Location()); quiet {
+	if until, quiet := s.quietHoursEnd(time.Now(), house.Location()); quiet {
 		return until, nil
 	}
 

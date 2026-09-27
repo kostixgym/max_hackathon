@@ -87,6 +87,10 @@ func run() error {
 	catalog := rules.NewCatalog(pool)
 	users := access.NewStore(pool, houses, initiatives.NewStore(pool))
 	initService := initiatives.NewService(pool, tm, catalog, houses, users, notifier)
+	initService.SetQuietHours(cfg.QuietHours)
+	if !cfg.QuietHours {
+		log.Warn("QUIET_HOURS is off: poll invitations and questions go out at night too")
+	}
 	polls := poll.NewStore(pool, initService, users, houses)
 	meetings := meeting.NewService(pool, tm, initService, users, houses, notifier)
 
