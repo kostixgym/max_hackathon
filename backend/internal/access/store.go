@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -414,27 +413,8 @@ func maskOwners(owners []registry.Owner) []OwnerSummary {
 func maskOwner(o registry.Owner) OwnerSummary {
 	return OwnerSummary{
 		ID: o.ID, PremiseID: o.PremiseID, PremiseNumber: o.PremiseNumber,
-		MaskedName: maskOwnerName(o.FullName, o.Kind), Kind: o.Kind,
+		MaskedName: registry.MaskName(o.FullName, o.Kind), Kind: o.Kind,
 		ShareNum: o.ShareNum, ShareDen: o.ShareDen,
 		WeightNum: o.WeightNum, WeightDen: o.WeightDen,
 	}
-}
-
-func maskOwnerName(fullName, kind string) string {
-	if kind != "person" {
-		return fullName
-	}
-	parts := strings.Fields(fullName)
-	if len(parts) < 2 {
-		return fullName
-	}
-	masked := []string{parts[0]}
-	for _, part := range parts[1:] {
-		r, _ := utf8.DecodeRuneInString(part)
-		if r != utf8.RuneError {
-			masked = append(masked, string(r)+".")
-		}
-	}
-
-	return strings.Join(masked, " ")
 }

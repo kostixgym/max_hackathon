@@ -99,6 +99,48 @@ func (s *Store) OwnerWeightInSnapshot(ctx context.Context, uploadID, ownerID str
 	return num, den, nil
 }
 
+// SnapshotOwner is an owner with the facts of one registry version and the entrance
+// of the premise: a meeting issues its ballots by the initiative's snapshot
+// (решение 2), and the tracker groups them by entrance for the round of the flats.
+type SnapshotOwner struct {
+	Owner
+	Entrance *int
+}
+
+// SnapshotOwners returns all owners of the registry version; their weights sum to
+// the total area of the version. Order: entrance (premises without one last), then
+// numeric flat numbers as numbers ("2" before "10"), then other premises ("Н1"), name.
+func (s *Store) SnapshotOwners(ctx context.Context, uploadID string) ([]SnapshotOwner, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT o.id::text, p.id::text, p.number, r.full_name, r.owner_kind,
+		       r.share_num, r.share_den, r.weight_num, r.weight_den, p.entrance
+		FROM owner_records r
+		JOIN owners o ON o.id = r.owner_id
+		JOIN premises p ON p.id = o.premise_id
+		WHERE r.registry_upload_id = $1::uuid
+		ORDER BY p.entrance NULLS LAST, p.number !~ '^[0-9]+$', length(p.number), p.number, r.full_name, o.id`,
+		uploadID)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot owners: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]SnapshotOwner, 0)
+	for rows.Next() {
+		var o SnapshotOwner
+		if err := rows.Scan(&o.ID, &o.PremiseID, &o.PremiseNumber, &o.FullName, &o.Kind,
+			&o.ShareNum, &o.ShareDen, &o.WeightNum, &o.WeightDen, &o.Entrance); err != nil {
+			return nil, fmt.Errorf("scan snapshot owner: %w", err)
+		}
+		result = append(result, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("snapshot owners: %w", err)
+	}
+
+	return result, nil
+}
+
 // PremiseByNumber returns the premise of the house with the given number.
 func (s *Store) PremiseByNumber(ctx context.Context, houseID, number string) (Premise, error) {
 	var p Premise

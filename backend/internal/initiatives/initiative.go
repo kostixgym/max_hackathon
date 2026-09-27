@@ -150,6 +150,7 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 	}
 
 	var created Initiative
+	var itemIDs []string
 	err = s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		var recent int
 		if err := tx.QueryRow(ctx, `
@@ -178,11 +179,13 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 			return fmt.Errorf("create initiative: %w", err)
 		}
 
-		for _, item := range tpl.Items {
-			if _, err = tx.Exec(ctx, `
+		itemIDs = make([]string, len(tpl.Items))
+		for i, item := range tpl.Items {
+			if err = tx.QueryRow(ctx, `
 				INSERT INTO agenda_items (initiative_id, position, text, decision_type_id)
-				VALUES ($1::uuid, $2, $3, $4::uuid)`,
-				created.ID, item.Position, item.Text, item.DecisionTypeID); err != nil {
+				VALUES ($1::uuid, $2, $3, $4::uuid)
+				RETURNING id::text`,
+				created.ID, item.Position, item.Text, item.DecisionTypeID).Scan(&itemIDs[i]); err != nil {
 				return fmt.Errorf("agenda item %d: %w", item.Position, err)
 			}
 		}
@@ -205,9 +208,9 @@ func (s *Service) CreateFromTemplate(ctx context.Context, in CreateInput) (Initi
 	created.TemplateID = &tpl.ID
 	created.Template = &TemplateRef{Code: tpl.Code, Name: tpl.Name, Version: tpl.Version}
 	created.Params = params
-	for _, item := range tpl.Items {
+	for i, item := range tpl.Items {
 		created.AgendaItems = append(created.AgendaItems, AgendaItem{
-			Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
+			ID: itemIDs[i], Position: item.Position, Text: item.Text, MajorityRule: item.MajorityRule,
 			LegalReference: item.LegalReference,
 		})
 	}
@@ -404,8 +407,10 @@ type TemplateRef struct {
 	Version int
 }
 
-// AgendaItem is one question of the agenda with the majority it needs.
+// AgendaItem is one question of the agenda with the majority it needs. ID is the
+// agenda item row: meeting ballots record their decisions by it.
 type AgendaItem struct {
+	ID             string
 	Position       int
 	Text           string
 	MajorityRule   string
