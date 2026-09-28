@@ -68,6 +68,17 @@ func Load() (Config, error) {
 	if c.InitDataMaxAge, err = time.ParseDuration(env("INITDATA_MAX_AGE", "24h")); err != nil {
 		return c, fmt.Errorf("INITDATA_MAX_AGE: %w", err)
 	}
+	if c.InitDataMaxAge <= 0 {
+		return c, fmt.Errorf("INITDATA_MAX_AGE must be positive, got %v", c.InitDataMaxAge)
+	}
+	if c.DemoInviteSlug != "" {
+		for _, r := range c.DemoInviteSlug {
+			ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-'
+			if !ok {
+				return c, fmt.Errorf("DEMO_INVITE_SLUG contains invalid character %q; allowed: [A-Za-z0-9_-]", string(r))
+			}
+		}
+	}
 
 	var errs []error
 	if c.DatabaseURL == "" {

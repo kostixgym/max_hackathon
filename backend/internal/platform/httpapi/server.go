@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -504,6 +505,9 @@ func requestLogger(log *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 		c.Next()
+		if c.Request.URL.Path == "/api/v1/healthz" || c.Request.URL.Path == "/api/v1/readyz" {
+			return
+		}
 		log.Info("http", "method", c.Request.Method, "path", c.Request.URL.Path,
 			"status", c.Writer.Status(), "duration_ms", time.Since(start).Milliseconds())
 	}
@@ -513,7 +517,7 @@ func recovery(log *slog.Logger) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if v := recover(); v != nil {
-				log.Error("panic in handler", "panic", v, "path", c.Request.URL.Path)
+				log.Error("panic in handler", "panic", v, "path", c.Request.URL.Path, "stack", string(debug.Stack()))
 				if !c.Writer.Written() {
 					writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
 				}

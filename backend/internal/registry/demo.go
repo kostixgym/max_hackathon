@@ -106,7 +106,7 @@ func person(flat, idx int, num, den int64) DemoOwner {
 	o := DemoOwner{FullName: name, ShareNum: num, ShareDen: den, Kind: "person"}
 	// The management company knows phones of two thirds of the owners.
 	if k%3 != 0 {
-		o.Phone = fmt.Sprintf("+7900%07d", k)
+		o.Phone = fmt.Sprintf("+7999%07d", k)
 	}
 
 	return o
