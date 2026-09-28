@@ -128,7 +128,7 @@ export function AuthState({ code = 'AUTH_INIT_DATA' }: { code?: string }) {
           icon="chat"
           tone="acc"
           title="Откройте приложение из MAX"
-          text="Мы не смогли понять, кто вы. Так бывает, если открыть ссылку в обычном браузере. Откройте её в мессенджере MAX — в чате дома или через QR-код."
+          text="В обычном браузере MAX не передаёт данные для входа. Откройте мини-приложение через бота MAX, чтобы войти в свой профиль."
         />
         <MaxTypography.Text className="cap" style={{ textAlign: 'center' }} variant="detail" color="secondary">
           Код ошибки: {code}
@@ -136,7 +136,7 @@ export function AuthState({ code = 'AUTH_INIT_DATA' }: { code?: string }) {
       </Main>
       <Foot>
         <MaxButton asChild variant="primary" size="large" stretched>
-          <a href="https://max.ru">Открыть в MAX</a>
+          <a href="https://max.ru/t603_hakaton_max_bot?startapp">Открыть приложение в MAX</a>
         </MaxButton>
       </Foot>
     </Screen>
