@@ -193,17 +193,25 @@ func (s *Store) ConfirmOwnerByPhone(ctx context.Context, userID, membershipID, p
 	if err != nil {
 		return OwnerLink{}, err
 	}
-	var premiseID, number string
+	var premiseID string
 	err = s.pool.QueryRow(ctx, `
-		SELECT p.id::text, p.number
-		FROM memberships m JOIN premises p ON p.id = m.premise_id
-		WHERE m.id = $1::uuid AND m.user_id = $2::uuid AND m.role = 'guest' AND m.status = 'pending'`, membershipID, userID).Scan(&premiseID, &number)
+		SELECT m.premise_id::text
+		FROM memberships m
+		WHERE m.id = $1::uuid AND m.user_id = $2::uuid AND m.role = 'guest' AND m.status = 'pending'`, membershipID, userID).Scan(&premiseID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return OwnerLink{}, ErrNotFound
 	}
 	if err != nil {
 		return OwnerLink{}, fmt.Errorf("load membership for phone verification: %w", err)
 	}
+	premises, err := s.registry.Premises(ctx, []string{premiseID})
+	if err != nil {
+		return OwnerLink{}, err
+	}
+	if len(premises) == 0 {
+		return OwnerLink{}, ErrNotFound
+	}
+	number := premises[0].Number
 	phoneRegistry, ok := s.registry.(interface {
 		OwnerByPhoneHash(context.Context, string, []byte) (registry.Owner, error)
 	})
