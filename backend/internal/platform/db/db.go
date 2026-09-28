@@ -64,7 +64,9 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, migrations fs.FS, log *slo
 		return fmt.Errorf("migration locker: %w", err)
 	}
 
-	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations, goose.WithSessionLocker(locker))
+	// Timestamped migrations from parallel branches may reach a database after a newer one.
+	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations,
+		goose.WithSessionLocker(locker), goose.WithAllowOutofOrder(true))
 	if err != nil {
 		return fmt.Errorf("goose provider: %w", err)
 	}

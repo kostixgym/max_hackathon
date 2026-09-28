@@ -87,7 +87,7 @@ func run() error {
 	tm := db.NewTransactionManager(pool)
 	notifier := notify.NewStore(pool)
 	catalog := rules.NewCatalog(pool)
-	users := access.NewStore(pool, houses, initiatives.NewStore(pool))
+	users := access.NewStore(pool, houses, initiatives.NewStore(pool), hasher)
 	initService := initiatives.NewService(pool, tm, catalog, houses, users, notifier)
 	initService.SetQuietHours(cfg.QuietHours)
 	if !cfg.QuietHours {
@@ -109,6 +109,9 @@ func run() error {
 		}
 		// The invite link is public by design (it hangs on the entrance door), logging it is fine.
 		log.Info("demo house ready", "invite_slug", slug)
+		if err := houses.SeedSampleHouses(ctx, hasher); err != nil {
+			return err
+		}
 	}
 
 	handler := httpapi.NewHandler(httpapi.Deps{
@@ -134,6 +137,8 @@ func run() error {
 		PollProgress:     polls,
 		Votes:            polls,
 		DemoMembers:      users,
+		GuestAttacher:    users,
+		PhoneVerifier:    users,
 
 		// Sprint to 30.09: the staff cabinet and the meeting.
 		Orgs:      users,

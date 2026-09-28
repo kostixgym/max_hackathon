@@ -44,6 +44,26 @@ func (f *fakeMeetings) Create(_ context.Context, in meeting.CreateInput) (meetin
 	return f.view, f.err
 }
 
+func (f *fakeMeetings) ActiveMeeting(context.Context, string) (meeting.Ref, bool, error) {
+	if f.err != nil {
+		return meeting.Ref{}, false, f.err
+	}
+	return meeting.Ref{ID: f.view.ID, Status: f.view.Status}, f.view.ID != "", nil
+}
+
+func TestGetInitiativeMeeting(t *testing.T) {
+	fake := &fakeMeetings{view: sampleMeetingView()}
+	rec := callJSON(newMeetingServer(fake), http.MethodGet, "/api/v1/initiatives/i-1/meeting", "")
+	if rec.Code != http.StatusOK || fake.viewer != "user-42" {
+		t.Fatalf("status = %d, viewer = %q, body = %s", rec.Code, fake.viewer, rec.Body)
+	}
+
+	empty := callJSON(newMeetingServer(&fakeMeetings{}), http.MethodGet, "/api/v1/initiatives/i-1/meeting", "")
+	if empty.Code != http.StatusNotFound {
+		t.Fatalf("missing meeting status = %d, body = %s", empty.Code, empty.Body)
+	}
+}
+
 func (f *fakeMeetings) Get(_ context.Context, _, viewerID string) (meeting.View, error) {
 	f.viewer = viewerID
 

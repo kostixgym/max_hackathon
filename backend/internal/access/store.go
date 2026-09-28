@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"maxhackathon/backend/internal/platform/security"
 	"maxhackathon/backend/internal/registry"
 )
 
@@ -77,11 +78,16 @@ type Store struct {
 	pool        *pgxpool.Pool
 	registry    Registry
 	initiatives Initiatives
+	hasher      *security.Hasher
 }
 
 // NewStore creates an access store on top of the registry and initiatives modules.
-func NewStore(pool *pgxpool.Pool, reg Registry, initiatives Initiatives) *Store {
-	return &Store{pool: pool, registry: reg, initiatives: initiatives}
+func NewStore(pool *pgxpool.Pool, reg Registry, initiatives Initiatives, hashers ...*security.Hasher) *Store {
+	s := &Store{pool: pool, registry: reg, initiatives: initiatives}
+	if len(hashers) > 0 {
+		s.hasher = hashers[0]
+	}
+	return s
 }
 
 // EnsureUser returns the user with the given MAX id, creating it on the first visit.
@@ -197,6 +203,29 @@ func (s *Store) MembershipsByUser(ctx context.Context, userID string) ([]Members
 	})
 
 	return result, nil
+}
+
+// AttachGuest creates the initial, unverified association with a premise. It
+// never assigns an owner or resident role; those require separate verification.
+func (s *Store) AttachGuest(ctx context.Context, userID, houseID, premiseNumber string) (string, error) {
+	premise, err := s.registry.PremiseByNumber(ctx, houseID, premiseNumber)
+	if errors.Is(err, registry.ErrNotFound) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	var id string
+	err = s.pool.QueryRow(ctx, `
+		INSERT INTO memberships (user_id, premise_id, role, status)
+		VALUES ($1::uuid, $2::uuid, 'guest', 'pending')
+		ON CONFLICT (user_id, premise_id) DO UPDATE
+		SET role = CASE WHEN memberships.role = 'guest' THEN 'guest' ELSE memberships.role END
+		RETURNING id::text`, userID, premise.ID).Scan(&id)
+	if err != nil {
+		return "", fmt.Errorf("attach guest to premise: %w", err)
+	}
+	return id, nil
 }
 
 // PremiseOwners returns owners from the current registry version. The list is

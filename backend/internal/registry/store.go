@@ -39,6 +39,12 @@ type HouseSummary struct {
 	InviteSlug      string
 	Address         string
 	Region          string
+	Locality        string
+	Street          string
+	HouseNumber     string
+	Building        string
+	Structure       string
+	FIASID          string
 	IsDemo          bool
 	PremisesCount   int
 	RegistryVersion *int
@@ -51,14 +57,17 @@ type HouseSummary struct {
 func (s *Store) HouseBySlug(ctx context.Context, slug string) (HouseSummary, error) {
 	var h HouseSummary
 	err := s.pool.QueryRow(ctx, `
-		SELECT h.id::text, h.invite_slug, h.address, h.region, h.is_demo,
+		SELECT h.id::text, h.invite_slug, h.address, h.region,
+		       COALESCE(h.locality, ''), COALESCE(h.street, ''), COALESCE(h.house_number, ''),
+		       COALESCE(h.building, ''), COALESCE(h.structure, ''), COALESCE(h.fias_id, ''), h.is_demo,
 		       (SELECT count(*) FROM premises p WHERE p.house_id = h.id),
 		       h.current_registry_version, ru.total_area_centi
 		FROM houses h
 		LEFT JOIN registry_uploads ru
 		       ON ru.house_id = h.id AND ru.version = h.current_registry_version
 		WHERE h.invite_slug = $1`, slug,
-	).Scan(&h.ID, &h.InviteSlug, &h.Address, &h.Region, &h.IsDemo,
+	).Scan(&h.ID, &h.InviteSlug, &h.Address, &h.Region, &h.Locality, &h.Street,
+		&h.HouseNumber, &h.Building, &h.Structure, &h.FIASID, &h.IsDemo,
 		&h.PremisesCount, &h.RegistryVersion, &h.TotalAreaCenti)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return h, ErrNotFound
@@ -68,6 +77,48 @@ func (s *Store) HouseBySlug(ctx context.Context, slug string) (HouseSummary, err
 	}
 
 	return h, nil
+}
+
+// SearchHouses finds public house cards by address. Results contain no registry
+// or personal data and are limited to houses with an imported premises registry.
+func (s *Store) SearchHouses(ctx context.Context, query string) ([]HouseSummary, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT h.id::text, h.invite_slug, h.address, h.region,
+		       COALESCE(h.locality, ''), COALESCE(h.street, ''), COALESCE(h.house_number, ''),
+		       COALESCE(h.building, ''), COALESCE(h.structure, ''), COALESCE(h.fias_id, ''), h.is_demo,
+		       (SELECT count(*) FROM premises p WHERE p.house_id = h.id),
+		       h.current_registry_version, ru.total_area_centi
+		FROM houses h
+		LEFT JOIN registry_uploads ru
+		       ON ru.house_id = h.id AND ru.version = h.current_registry_version
+		WHERE h.address ILIKE '%' || $1 || '%'
+		   OR h.region ILIKE '%' || $1 || '%'
+		   OR h.locality ILIKE '%' || $1 || '%'
+		   OR h.street ILIKE '%' || $1 || '%'
+		   OR h.house_number ILIKE '%' || $1 || '%'
+		   OR h.building ILIKE '%' || $1 || '%'
+		   OR h.structure ILIKE '%' || $1 || '%'
+		ORDER BY CASE WHEN h.address ILIKE $1 || '%' THEN 0 ELSE 1 END,
+		         h.is_demo DESC, h.address
+		LIMIT 20`, query)
+	if err != nil {
+		return nil, fmt.Errorf("search houses: %w", err)
+	}
+	defer rows.Close()
+	result := make([]HouseSummary, 0)
+	for rows.Next() {
+		var h HouseSummary
+		if err := rows.Scan(&h.ID, &h.InviteSlug, &h.Address, &h.Region, &h.Locality, &h.Street,
+			&h.HouseNumber, &h.Building, &h.Structure, &h.FIASID, &h.IsDemo,
+			&h.PremisesCount, &h.RegistryVersion, &h.TotalAreaCenti); err != nil {
+			return nil, fmt.Errorf("scan house search result: %w", err)
+		}
+		result = append(result, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("search houses: %w", err)
+	}
+	return result, nil
 }
 
 // applyVersion marks a registry version as applied and makes it the current
