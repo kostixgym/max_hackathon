@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button as MaxButton, CellAction as MaxCellAction, Typography, Typography as MaxTypography } from '@maxhub/max-ui';
-import { Apt, Btn, DemoBadge, Foot, Main, Note, Screen, Status, UiAvatar, UiInput, Card } from '../components/ui';
+import { Apt, Btn, Cell, DemoBadge, Foot, Main, Note, Screen, Status, UiAvatar, UiInput, UiList, Card } from '../components/ui';
 import { useApi } from '../hooks/useApi';
-import { attachGuest, becomeDemoStaff, confirmDemoMembership, fetchMe, getDisplayUser, searchHouses, verifyMembershipPhone, type HouseJSON, type MeResponse } from '../lib/api';
+import { attachGuest, becomeDemoStaff, confirmDemoMembership, fetchMe, fetchOwnerClaimCandidates, getDisplayUser, searchHouses, submitOwnerClaim, verifyMembershipPhone, type HouseJSON, type MeResponse, type Owner } from '../lib/api';
 import { fmtM2Str } from '../lib/format';
 
 function HouseCard({ house, memberships, onOpen }: {
@@ -50,6 +50,7 @@ function HouseCard({ house, memberships, onOpen }: {
                     {membership.status === 'verified' ? 'Подтверждена' : 'Не подтверждена'}
                   </Status>
                 </div>
+                {membership.rejection_reason && <MaxTypography.Text variant="detail" color="secondary">Причина отказа: {membership.rejection_reason}</MaxTypography.Text>}
               </div>
             </MaxCellAction>
           );
@@ -96,7 +97,7 @@ export function Entry() {
           const verified = memberships.find((m) => m.status === 'verified' && m.role === 'owner')
             ?? memberships.find((m) => m.status === 'verified')
             ?? memberships[0];
-          const path = verified.role === 'owner' ? '/home' : '/home/guest';
+          const path = verified.role === 'owner' && verified.status === 'verified' ? '/home' : '/home/guest';
           return <HouseCard key={houseId} house={house} memberships={memberships} onOpen={() => navigate(`${path}?house=${encodeURIComponent(house.slug)}`)} />;
         }) : <Card className="card"><MaxTypography.Text className="t" variant="body">Вы ещё не добавили ни одной квартиры. Начните с кнопки ниже.</MaxTypography.Text></Card>}
 
@@ -121,6 +122,7 @@ export function AttachHouse() {
   const [results, setResults] = useState<HouseJSON[]>([]);
   const [attached, setAttached] = useState(false);
   const [membershipId, setMembershipId] = useState('');
+  const [claimCandidates, setClaimCandidates] = useState<Owner[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState('');
@@ -182,6 +184,20 @@ export function AttachHouse() {
     }
   };
 
+  const requestOwnerReview = async () => {
+    if (!house || !premise.trim() || submitting) return;
+    setSubmitting(true); setError('');
+    try {
+      const result = await attachGuest(house.slug, premise.trim());
+      setMembershipId(result.membership_id);
+      setAttached(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Не удалось создать заявку на проверку');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const verifyPhone = async () => {
     if (!membershipId || submitting) return;
     const webApp = window.WebApp;
@@ -194,6 +210,22 @@ export function AttachHouse() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Номер не совпал с данными собственника. Можно попробовать ещё раз.');
     } finally { setSubmitting(false); }
+  };
+
+  const loadClaimCandidates = async () => {
+    if (!membershipId || submitting) return;
+    setSubmitting(true); setError('');
+    try { setClaimCandidates((await fetchOwnerClaimCandidates(membershipId)).owners); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось загрузить список собственников'); }
+    finally { setSubmitting(false); }
+  };
+
+  const claimOwner = async (owner: Owner) => {
+    if (!membershipId || submitting) return;
+    setSubmitting(true); setError('');
+    try { await submitOwnerClaim(membershipId, owner.id); navigate('/', { replace: true }); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Не удалось отправить заявку в УК'); }
+    finally { setSubmitting(false); }
   };
 
   const joinDemoStaff = async () => {
@@ -213,7 +245,7 @@ export function AttachHouse() {
   if (meState.loading) return <Screen><Main><Card className="card"><MaxTypography.Text className="t2" variant="body" color="secondary">Загрузка…</MaxTypography.Text></Card></Main></Screen>;
   if (meState.error || !me) return <Screen><Main><Note kind="neg">Не удалось загрузить профиль.</Note></Main></Screen>;
 
-  if (attached) return <Screen><div className="hdr"><MaxButton className="attach-back-button" type="button" variant="ghost" size="large" aria-label="Назад" onClick={() => navigate('/', { replace: true })}><span className="attach-back-glyph" aria-hidden="true">‹</span></MaxButton><div className="ttl"><Typography.Title variant="large-strong">Проверка собственника</Typography.Title></div></div><Main><Card className="card"><Typography.Title variant="medium-strong">{house?.address} · кв. {premise}</Typography.Title><Typography.Text variant="detail" color="secondary">Поделитесь подтверждённым номером MAX</Typography.Text></Card><Note kind="info">Сервер сверит номер с текущим реестром собственников. Если найдёт совпадение, квартира сразу появится в профиле со статусом «Собственник».</Note>{error && <Note kind="neg">{error}</Note>}<Btn onClick={verifyPhone} disabled={submitting}>{submitting ? 'Проверяем…' : 'Поделиться номером MAX'}</Btn><Btn kind="text" onClick={() => navigate('/', { replace: true })}>Позже</Btn></Main></Screen>;
+  if (attached) return <Screen><div className="hdr"><MaxButton className="attach-back-button" type="button" variant="ghost" size="large" aria-label="Назад" onClick={() => navigate('/', { replace: true })}><span className="attach-back-glyph" aria-hidden="true">‹</span></MaxButton><div className="ttl"><Typography.Title variant="large-strong">Проверка собственника</Typography.Title></div></div><Main><Card className="card"><Typography.Title variant="medium-strong">{house?.address} · кв. {premise}</Typography.Title><Typography.Text variant="detail" color="secondary">Поделитесь подтверждённым номером MAX или отправьте заявку в УК</Typography.Text></Card><Note kind="info">Номер проверяется по реестру. Если он не совпадает, выберите свою запись собственника — УК подтвердит её вручную.</Note>{error && <Note kind="neg">{error}</Note>}<Btn onClick={verifyPhone} disabled={submitting}>{submitting ? 'Проверяем…' : 'Поделиться номером MAX'}</Btn>{!claimCandidates && <Btn kind="secondary" onClick={loadClaimCandidates} disabled={submitting}>Выбрать себя в реестре</Btn>}{claimCandidates && <UiList>{claimCandidates.map((owner) => <Cell key={owner.id} onClick={() => claimOwner(owner)} chevron><b>{owner.masked_name}</b><Typography.Text variant="detail" color="secondary">Доля {owner.share.numerator}/{owner.share.denominator} · голос {fmtM2Str(owner.weight_m2)}</Typography.Text></Cell>)}</UiList>}<Btn kind="text" onClick={() => navigate('/', { replace: true })}>Позже</Btn></Main></Screen>;
 
   return <Screen>
     <div className="hdr">
@@ -244,7 +276,8 @@ export function AttachHouse() {
         </label>}
         <Note kind="info">{house.is_demo ? 'Это учебный демо-дом: привязка и проверка собственника выполняются демонстрационно.' : 'После выбора квартиры сервер создаст гостевую привязку. Для автоматической проверки собственника нужен подтверждённый контакт MAX.'}</Note>
         {error && <Note kind="neg">{error}</Note>}
-        <Btn onClick={joinPremise} disabled={submitting || !premise.trim()}>{submitting ? 'Прикрепляем…' : 'Продолжить'}</Btn>
+        <Btn onClick={joinPremise} disabled={submitting || !premise.trim()}>{submitting ? 'Прикрепляем…' : house.is_demo ? 'Подтвердить собственника в демо' : 'Продолжить'}</Btn>
+        {house.is_demo && <Btn kind="secondary" onClick={requestOwnerReview} disabled={submitting || !premise.trim()}>{submitting ? 'Создаём заявку…' : 'Отправить заявку на проверку УК'}</Btn>}
         <Btn kind="text" onClick={() => { setHouse(null); setError(''); }}>Выбрать другой дом</Btn>
         {house.is_demo && <Btn kind="text" onClick={joinDemoStaff} disabled={submitting}>Я сотрудник УК · демо-вход</Btn>}
       </>}

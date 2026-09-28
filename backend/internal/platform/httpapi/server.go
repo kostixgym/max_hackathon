@@ -49,6 +49,10 @@ type AccessChecks interface {
 	MayViewInitiatives(ctx context.Context, userID, houseID string) (bool, error)
 }
 
+type PathSelector interface {
+	SelectPathB(ctx context.Context, initiativeID, userID string) error
+}
+
 // Deps are the dependencies of the API.
 type Deps struct {
 	Auth     *Authenticator
@@ -63,6 +67,7 @@ type Deps struct {
 	Templates        TemplateCatalog
 	Initiatives      InitiativeCreator
 	InitiativeReader InitiativeReader
+	PathSelector     PathSelector
 	PollStarter      PollStarter
 	PollProgress     PollProgress
 	Votes            Voter
@@ -90,7 +95,7 @@ func NewHandler(d Deps) http.Handler {
 	h := &handlers{
 		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode,
 		access: d.Access, templates: d.Templates, initiatives: d.Initiatives,
-		initiativeReader: d.InitiativeReader, pollStarter: d.PollStarter,
+		initiativeReader: d.InitiativeReader, pathSelector: d.PathSelector, pollStarter: d.PollStarter,
 		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers, guestAttacher: d.GuestAttacher, phoneVerifier: d.PhoneVerifier,
 		botToken: d.Auth.BotToken,
 		orgs:     d.Orgs, orgHouses: d.OrgHouses, demands: d.Demands, meetings: d.Meetings,
@@ -120,6 +125,8 @@ func NewHandler(d Deps) http.Handler {
 	protected.GET("/houses", h.searchHouses)
 	protected.POST("/houses/:house/memberships", h.attachGuest)
 	protected.POST("/memberships/:id/verify/phone", h.verifyOwnerPhone)
+	protected.GET("/memberships/:id/claim-candidates", h.claimCandidates)
+	protected.POST("/memberships/:id/claim", h.claimOwner)
 	protected.GET("/premises/:premiseID/owners", h.premiseOwners)
 	protected.GET("/houses/:house/meeting-officer-candidates", h.meetingOfficerCandidates)
 
@@ -132,6 +139,7 @@ func NewHandler(d Deps) http.Handler {
 	protected.POST("/houses/:house/initiatives", h.createInitiative)
 	protected.GET("/initiatives/:id", h.initiativeCard)
 	protected.POST("/initiatives/:id/start-poll", h.startPoll)
+	protected.POST("/initiatives/:id/select-path-b", h.selectPathB)
 	protected.PUT("/initiatives/:id/my-vote", h.myVote)
 	protected.GET("/initiatives/:id/poll", h.pollProgressHandler)
 
@@ -142,6 +150,9 @@ func NewHandler(d Deps) http.Handler {
 	protected.GET("/orgs", h.myOrgs)
 	protected.GET("/orgs/:orgID/houses", h.orgHousesList)
 	protected.GET("/orgs/:orgID/demands", h.orgDemands)
+	protected.GET("/orgs/:orgID/owner-requests", h.orgOwnerRequests)
+	protected.POST("/orgs/:orgID/owner-requests/:membershipID/approve", h.approveOwnerRequest)
+	protected.POST("/orgs/:orgID/owner-requests/:membershipID/reject", h.rejectOwnerRequest)
 	protected.POST("/initiatives/:id/demand", h.createDemand)
 	protected.GET("/initiatives/:id/demand", h.getInitiativeDemand)
 	protected.GET("/demands/:id", h.getDemand)
@@ -190,6 +201,7 @@ type handlers struct {
 	templates        TemplateCatalog
 	initiatives      InitiativeCreator
 	initiativeReader InitiativeReader
+	pathSelector     PathSelector
 	pollStarter      PollStarter
 	pollProgress     PollProgress
 	votes            Voter

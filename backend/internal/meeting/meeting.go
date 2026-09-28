@@ -266,6 +266,10 @@ func (s *Service) load(ctx context.Context, meetingID string) (loaded, error) {
 // runs reports whether the user runs the meeting: the staff of the house's
 // organization who acts on the initiative (решение 79).
 func (s *Service) runs(ctx context.Context, userID string, l loaded) (bool, error) {
+	if l.initiative.Path != nil && *l.initiative.Path == "B" &&
+		l.initiative.InitiatorUserID != nil && *l.initiative.InitiatorUserID == userID {
+		return true, nil
+	}
 	return s.access.ManagesAsStaff(ctx, userID, l.house.ID, l.initiative.InitiatorUserID)
 }
 

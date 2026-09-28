@@ -1,10 +1,11 @@
 import { Typography as MaxTypography } from '@maxhub/max-ui';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 import { ProgressM2 } from '../../components/ProgressM2';
 import { Badge, Btn, Foot, Header, Kv, Main, Note, Screen, Status, UiList, Card } from '../../components/ui';
 import { fmtM2 } from '../../lib/format';
 import { useApi } from '../../hooks/useApi';
-import { fetchMeeting, fetchMeetingTracker, parseM2 } from '../../lib/api';
+import { downloadPDF, fetchMeeting, fetchMeetingTracker, parseM2 } from '../../lib/api';
 
 function AgendaCard({ items }: { items: { position: number; text: string; majority_rule: string }[] }) {
   return (
@@ -52,6 +53,8 @@ function getFormLabel(form: string): string {
 export function MeetingView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [downloadError, setDownloadError] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   const meetingState = useApi(() => (id ? fetchMeeting(id) : Promise.reject('No ID')), [id]);
 
@@ -141,6 +144,7 @@ export function MeetingView() {
         )}
       </Main>
       <Foot>
+        {downloadError && <Note kind="neg">{downloadError}</Note>}
         {meeting.is_admin && meeting.status === 'voting' && (
           <>
             <Btn onClick={() => navigate(`/meetings/${id}/tracker`)}>Трекер квартир</Btn>
@@ -150,8 +154,14 @@ export function MeetingView() {
           </>
         )}
         {meeting.status === 'finalized' && (
-          <Btn icon="download" onClick={() => window.open(`/api/v1/meetings/${id}/protocol.pdf`, '_blank')}>
-            Скачать протокол
+          <Btn icon="download" disabled={downloading} onClick={async () => {
+            setDownloading(true);
+            setDownloadError('');
+            try { await downloadPDF(`/meetings/${id}/protocol.pdf`, `protocol-${id}.pdf`); }
+            catch (error) { setDownloadError(error instanceof Error ? error.message : 'Не удалось скачать протокол'); }
+            finally { setDownloading(false); }
+          }}>
+            {downloading ? 'Формируем…' : 'Скачать протокол'}
           </Btn>
         )}
       </Foot>

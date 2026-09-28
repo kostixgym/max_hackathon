@@ -133,6 +133,7 @@ func run() error {
 		Templates:        catalog,
 		Initiatives:      initService,
 		InitiativeReader: initService,
+		PathSelector:     initService,
 		PollStarter:      initService,
 		PollProgress:     polls,
 		Votes:            polls,
@@ -155,6 +156,7 @@ func run() error {
 				houseByID:        houses,
 				users:            users,
 				votes:            polls,
+				pollVoteReader:   polls,
 				progress:         polls,
 				initiatives:      initService,
 				initiativeReader: initService,
@@ -213,6 +215,7 @@ type botDeps struct {
 	houseByID        bot.HouseReader
 	users            bot.Users
 	votes            bot.Votes
+	pollVoteReader   bot.PollVotes
 	progress         bot.PollProgress
 	initiatives      bot.PollingReader
 	initiativeReader bot.InitiativeReader
@@ -280,6 +283,7 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 		Progress:    deps.progress,
 		Me:          identity,
 	}
+	reminder := &bot.Reminder{Inviter: inviter, Votes: deps.pollVoteReader}
 	result := &bot.PollResult{
 		Messages:    api.Messages,
 		Initiatives: deps.initiativeReader,
@@ -322,6 +326,7 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 			Queue: deps.notifier,
 			Handlers: map[string]notify.JobHandler{
 				notify.TypePollInvite:       inviter.HandleJob,
+				notify.TypePollReminder:     reminder.HandleJob,
 				notify.TypePollFinished:     result.HandleJob,
 				notify.TypeQuestionAsked:    relay.HandleAsked,
 				notify.TypeQuestionAnswered: relay.HandleAnswered,

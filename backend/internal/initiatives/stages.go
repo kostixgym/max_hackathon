@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -75,6 +76,42 @@ func transitionAllowed(from, to string) bool {
 func (s *Service) SetStage(ctx context.Context, id, from, to string, path *string) error {
 	return s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
 		return s.SetStageTx(ctx, tx, id, from, to, path)
+	})
+}
+
+// SelectPathB lets the initiator choose self-organized OСС after the support poll
+// closes. Persisting the choice unlocks the owner directory for officer selection.
+func (s *Service) SelectPathB(ctx context.Context, id, userID string) error {
+	in, err := s.Details(ctx, id)
+	if err != nil {
+		return err
+	}
+	if in.InitiatorUserID == nil || *in.InitiatorUserID != userID {
+		return ErrNotInitiator
+	}
+	if in.Stage != StagePoll {
+		return ErrWrongStage
+	}
+	if in.PollEndsAt == nil || time.Now().Before(*in.PollEndsAt) {
+		return ErrPollStillOpen
+	}
+	return s.tm.WithinTransaction(ctx, func(ctx context.Context, tx pgx.Tx) error {
+		tag, err := tx.Exec(ctx, `UPDATE initiatives SET path = 'B', updated_at = now()
+			WHERE id = $1::uuid AND initiator_user_id = $2::uuid AND stage = 'poll' AND path IS NULL AND hidden_at IS NULL`, id, userID)
+		if err != nil {
+			return fmt.Errorf("select path B: %w", err)
+		}
+		if tag.RowsAffected() == 1 {
+			return nil
+		}
+		var path *string
+		if err := tx.QueryRow(ctx, `SELECT path FROM initiatives WHERE id = $1::uuid`, id).Scan(&path); err != nil {
+			return fmt.Errorf("read selected path: %w", err)
+		}
+		if path != nil && *path == "B" {
+			return nil
+		}
+		return ErrPathAlreadyChosen
 	})
 }
 

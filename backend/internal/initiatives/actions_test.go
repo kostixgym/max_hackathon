@@ -70,6 +70,14 @@ func TestActions(t *testing.T) {
 					if a.Reason != c.castVote {
 						t.Errorf("cast_poll_vote: reason %q, want %q", a.Reason, c.castVote)
 					}
+				case ActionSelectPathA:
+					if a.Reason != c.initiative.pathChoiceBlocked(c.viewer, false) {
+						t.Errorf("select_path_a: reason %q", a.Reason)
+					}
+				case ActionSelectPathB:
+					if a.Reason != c.initiative.pathChoiceBlocked(c.viewer, true) {
+						t.Errorf("select_path_b: reason %q", a.Reason)
+					}
 				default:
 					// Steps 1.4–1.6 are not done: the button must not work yet.
 					if a.Allowed || a.Reason != ReasonNotImplemented {

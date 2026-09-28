@@ -67,6 +67,7 @@ func checkDates(now time.Time, demo bool, notice, starts, ends time.Time) error 
 type CreateInput struct {
 	InitiativeID     string
 	ByUserID         string
+	Path             string // empty or A: demand through the company; B: self-organized
 	Form             string
 	NoticeAt         time.Time
 	VotingStartsAt   time.Time
@@ -92,14 +93,34 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (View, error) {
 	if err != nil {
 		return View{}, err
 	}
+	pathB := in.Path == "B"
+	if in.Path != "" && in.Path != "A" && !pathB {
+		return View{}, ErrWrongStage
+	}
 	runs, err := s.runs(ctx, in.ByUserID, loaded{initiative: initiative, house: house})
 	if err != nil {
 		return View{}, err
 	}
+	if pathB && initiative.InitiatorUserID != nil && *initiative.InitiatorUserID == in.ByUserID {
+		runs = true
+	}
 	if !runs {
 		return View{}, ErrStaffOnly
 	}
-	if initiative.Stage != initiatives.StageDemand {
+	fromStage := initiatives.StageDemand
+	var selectedPath *string
+	if pathB {
+		fromStage = initiatives.StagePoll
+		path := "B"
+		selectedPath = &path
+		if initiative.PollEndsAt == nil || s.now().Before(*initiative.PollEndsAt) {
+			return View{}, fmt.Errorf("%w: support poll is still open", ErrWrongStage)
+		}
+	} else if in.Path == "A" {
+		path := "A"
+		selectedPath = &path
+	}
+	if initiative.Stage != fromStage {
 		return View{}, fmt.Errorf("%w: %s", ErrWrongStage, initiative.Stage)
 	}
 	if in.Form != FormGISElectronic && in.Form != FormPaperAbsentee {
@@ -135,7 +156,7 @@ func (s *Service) Create(ctx context.Context, in CreateInput) (View, error) {
 		// The stage moves first: it locks the initiative, so a concurrent creation waits
 		// here and then fails on the stage it no longer has.
 		if err := s.initiatives.SetStageTx(ctx, tx, initiative.ID,
-			initiatives.StageDemand, initiatives.StageMeeting, nil); err != nil {
+			fromStage, initiatives.StageMeeting, selectedPath); err != nil {
 			if errors.Is(err, initiatives.ErrWrongStage) {
 				return fmt.Errorf("%w: %w", ErrWrongStage, err)
 			}

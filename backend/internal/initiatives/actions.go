@@ -29,7 +29,9 @@ const (
 	// ReasonNotImplemented: the action belongs to a step of the plan that is not done
 	// yet (edit, paths A and B, meeting, cancel — steps 1.4–1.6). The step replaces it
 	// with the rule of the action, and the button of the mini-app turns on by itself.
-	ReasonNotImplemented = "not_implemented"
+	ReasonNotImplemented    = "not_implemented"
+	ReasonSupportNotReached = "support_not_reached"
+	ReasonPollStillOpen     = "poll_still_open"
 )
 
 // Action is one button of the card.
@@ -43,7 +45,9 @@ type Action struct {
 type Viewer struct {
 	UserID string
 	// Owner: a verified owner of a premise of the house. Only owners vote (docs/01).
-	Owner bool
+	Owner         bool
+	DemandReached bool
+	PollClosed    bool
 }
 
 // Actions returns every action of the card with its verdict for the viewer at the moment now.
@@ -52,10 +56,25 @@ func (in Initiative) Actions(v Viewer, now time.Time) []Action {
 		{Code: ActionEdit, Reason: ReasonNotImplemented},
 		verdict(ActionStartPoll, in.startPollBlocked(v.UserID)),
 		verdict(ActionCastPollVote, in.votingBlocked(v, now)),
-		{Code: ActionSelectPathA, Reason: ReasonNotImplemented},
-		{Code: ActionSelectPathB, Reason: ReasonNotImplemented},
+		verdict(ActionSelectPathA, in.pathChoiceBlocked(v, false)),
+		verdict(ActionSelectPathB, in.pathChoiceBlocked(v, true)),
 		{Code: ActionCreateMeeting, Reason: ReasonNotImplemented},
 		{Code: ActionCancel, Reason: ReasonNotImplemented},
+	}
+}
+
+func (in Initiative) pathChoiceBlocked(v Viewer, requireClosed bool) string {
+	switch {
+	case in.InitiatorUserID == nil || *in.InitiatorUserID != v.UserID:
+		return ReasonNotInitiator
+	case in.Stage != StagePoll:
+		return ReasonWrongStage
+	case !v.DemandReached:
+		return ReasonSupportNotReached
+	case requireClosed && !v.PollClosed:
+		return ReasonPollStillOpen
+	default:
+		return ""
 	}
 }
 

@@ -4,7 +4,7 @@ import { Apt, Badge, Btn, Cell, DemoBadge, Foot, Header, Kv, Main, Note, Screen,
 import { fmtM2, fmtNum } from '../../lib/format';
 import { P } from '../../paths';
 import { useApi } from '../../hooks/useApi';
-import { fetchMe, fetchInitiatives, getStartParam, parseM2 } from '../../lib/api';
+import { fetchMe, fetchHouse, fetchInitiatives, getStartParam, parseM2 } from '../../lib/api';
 
 function HomeHeader({ address, isDemo }: { address: string; isDemo: boolean }) {
   const navigate = useNavigate();
@@ -66,10 +66,11 @@ export function Home() {
   const ownerMembership = ownerMemberships[0];
   const house = ownerMembership?.house;
   const houseId = house?.id;
+  const houseState = useApi(() => house ? fetchHouse(house.slug) : Promise.resolve(null), [house?.slug]);
 
   const initiativesState = useApi(() => (houseId ? fetchInitiatives(houseId) : Promise.resolve({ initiatives: [] })), [houseId]);
 
-  if (meState.loading || initiativesState.loading) {
+  if (meState.loading || initiativesState.loading || houseState.loading) {
     return (
       <Screen>
         <Main>
@@ -81,7 +82,7 @@ export function Home() {
     );
   }
 
-  if (meState.error || initiativesState.error || !me || !ownerMembership || !house) {
+  if (meState.error || initiativesState.error || houseState.error || !me || !ownerMembership || !house) {
     return (
       <Screen>
         <Main>
@@ -96,6 +97,8 @@ export function Home() {
   const memberships = ownerMemberships.filter((m) => m.house.id === house.id);
   const totalArea = memberships.reduce((sum, m) => sum + (parseM2(m.premise.display_area_m2) || 0), 0);
   const totalWeight = memberships.reduce((sum, m) => sum + (parseM2(m.owner?.weight_m2 ?? null) || 0), 0);
+  const homeTotalArea = parseM2(houseState.data?.total_area_m2 ?? null) || 0;
+  const homeWeightPercent = homeTotalArea > 0 ? totalWeight / homeTotalArea * 100 : 0;
   const initiatives = initiativesState.data?.initiatives || [];
   const activeInitiatives = initiatives.filter((i) => i.stage === 'draft' || i.stage === 'poll' || i.stage === 'demand' || i.stage === 'meeting');
   const archivedInitiatives = initiatives.filter((i) => i.stage === 'done' || i.stage === 'cancelled');
@@ -125,6 +128,9 @@ export function Home() {
               <b>{fmtM2(totalArea)}</b>
               <Badge kind="fact" />
             </span>
+          </Kv>
+          <Kv k="Ваш вес голоса">
+            <span className="row"><b>{fmtM2(totalWeight)} м² · {homeWeightPercent.toLocaleString('ru-RU', { maximumFractionDigits: 3 })}% дома</b><Badge kind="calc" /></span>
           </Kv>
           {memberships.length > 0 && (
             <>

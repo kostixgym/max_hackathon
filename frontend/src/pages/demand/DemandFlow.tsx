@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Badge, Btn, Card, Foot, Header, Kv, Main, Note, Opt, Screen, Status, UiInput } from '../../components/ui';
 import { useApi } from '../../hooks/useApi';
-import { createDemand, downloadDemandPDF, fetchDemand, fetchInitiative, fetchMe, fetchPollProgress, markDemandDelivered, parseM2, type DemandRecord } from '../../lib/api';
+import { createDemand, downloadDemandPDF, fetchDemand, fetchInitiative, fetchMe, fetchPollProgress, markDemandDelivered, parseM2, selectPathB, type DemandRecord } from '../../lib/api';
 import { fmtM2 } from '../../lib/format';
 
 function dateText(value: string | null): string {
@@ -22,21 +22,33 @@ function ErrorNote({ error }: { error: unknown }) {
 export function PathChoicePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<unknown>(null);
   const initiativeState = useApi(() => id ? fetchInitiative(id) : Promise.reject(new Error('Инициатива не выбрана')), [id]);
   const pollState = useApi(() => id ? fetchPollProgress(id) : Promise.reject(new Error('Опрос не выбран')), [id]);
   if (initiativeState.loading || pollState.loading) return <Screen><Header title="Кто проведёт собрание" /><Main><Card className="card">Загружаем результаты опроса…</Card></Main></Screen>;
   if (initiativeState.error || pollState.error || !initiativeState.data || !pollState.data || !id) return <Screen><Header title="Кто проведёт собрание" /><Main><Note kind="neg">Не удалось загрузить результаты опроса.</Note></Main></Screen>;
   const canContinue = initiativeState.data.is_initiator && initiativeState.data.stage === 'poll' && pollState.data.demand_reached;
+  const pollClosed = Boolean(initiativeState.data.poll_ends_at && new Date(initiativeState.data.poll_ends_at) <= new Date());
   return <Screen>
     <Header title="Кто проведёт собрание" />
     <Main className="template-main">
       <div className="template-intro"><MaxTypography.Label className="template-eyebrow" variant="medium-strong">ПОСЛЕ ОПРОСА</MaxTypography.Label><MaxTypography.Headline variant="medium">Выберите путь к собранию</MaxTypography.Headline><MaxTypography.Text variant="body" color="secondary">Поддержка «за»: {fmtM2(parseM2(pollState.data.for_m2) ?? 0)}. Для требования нужно {fmtM2(parseM2(pollState.data.demand_m2) ?? 0)}.</MaxTypography.Text></div>
       <Card className="card template-section"><Status kind="acc">Доступно</Status><MaxTypography.Headline variant="small">Через управляющую компанию</MaxTypography.Headline><MaxTypography.Text variant="body" color="secondary">Вы создаёте требование. После его передачи УК организует собрание.</MaxTypography.Text></Card>
-      <Card className="card template-section"><Status kind="none">Пока недоступно</Status><MaxTypography.Headline variant="small">Провести самостоятельно</MaxTypography.Headline><MaxTypography.Text variant="body" color="secondary">Самостоятельное проведение появится после подключения серверного сценария.</MaxTypography.Text></Card>
+      <Card className="card template-section"><Status kind="acc">Доступно</Status><MaxTypography.Headline variant="small">Провести самостоятельно</MaxTypography.Headline><MaxTypography.Text variant="body" color="secondary">Вы сами организуете собрание, выбираете ответственных и ведёте учёт бюллетеней.</MaxTypography.Text></Card>
       {!initiativeState.data.is_initiator && <Note kind="info">Выбрать путь может инициатор.</Note>}
       {!pollState.data.demand_reached && <Note kind="info">Поддержки пока недостаточно для требования.</Note>}
+      {!pollClosed && <Note kind="info">Самостоятельное проведение можно выбрать после окончания опроса.</Note>}
+      {error !== null && <ErrorNote error={error} />}
     </Main>
-    <Foot><Btn onClick={() => navigate(`/initiatives/${id}/demand/new`)} disabled={!canContinue}>Продолжить через УК</Btn></Foot>
+    <Foot>
+      <Btn onClick={() => navigate(`/initiatives/${id}/demand/new`)} disabled={!canContinue}>Продолжить через УК</Btn>
+      <Btn kind="secondary" disabled={!canContinue || !pollClosed || busy} onClick={async () => {
+        setBusy(true); setError(null);
+        try { await selectPathB(id); navigate(`/initiatives/${id}/meeting/new?path=B`); }
+        catch (cause) { setError(cause); setBusy(false); }
+      }}>{busy ? 'Открываем…' : 'Провести самостоятельно'}</Btn>
+    </Foot>
   </Screen>;
 }
 

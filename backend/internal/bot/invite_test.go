@@ -95,6 +95,35 @@ func TestPollInviteSendsVotingButtons(t *testing.T) {
 	}
 }
 
+type fakePollVoteReader struct {
+	voted bool
+	err   error
+}
+
+func (f fakePollVoteReader) MyVote(context.Context, string, string) (poll.MyVote, bool, error) {
+	return poll.MyVote{}, f.voted, f.err
+}
+
+func TestPollReminderSkipsOwnersWhoVoted(t *testing.T) {
+	msgs := &fakeMessages{}
+	inviter := &PollInviter{Messages: msgs, Initiatives: fakePolling{stage: "poll"}, Houses: fakeHouseReader{}, Me: Identity{UserID: 555, Username: "dom_test_bot"}, Now: func() time.Time { return testNow }}
+	reminder := &Reminder{Inviter: inviter, Votes: fakePollVoteReader{voted: true}}
+	payload, _ := json.Marshal(map[string]any{"initiative_id": testInitiative, "user_id": "user-1", "max_user_id": 42})
+	if err := reminder.HandleJob(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs.sent) != 0 {
+		t.Fatalf("sent %d reminders to an owner who voted", len(msgs.sent))
+	}
+	reminder.Votes = fakePollVoteReader{}
+	if err := reminder.HandleJob(context.Background(), payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs.sent) != 1 {
+		t.Fatalf("sent %d reminders to an owner who has not voted", len(msgs.sent))
+	}
+}
+
 // A job may run long after it was queued: an initiative that is hidden, cancelled
 // or past its poll gets no voting buttons, and the job is not retried.
 func TestPollInviteSkipsClosedPolls(t *testing.T) {

@@ -95,7 +95,9 @@ var (
 	// ErrWrongStage means the transition is not allowed from the current stage.
 	ErrWrongStage = errors.New("initiative stage does not allow this action")
 	// ErrNotInitiator means only the initiator may do this.
-	ErrNotInitiator = errors.New("only the initiator may do this")
+	ErrNotInitiator      = errors.New("only the initiator may do this")
+	ErrPollStillOpen     = errors.New("support poll is still open")
+	ErrPathAlreadyChosen = errors.New("initiative path is already chosen")
 	// ErrEmptyTitle means the title is empty or only spaces.
 	ErrEmptyTitle = errors.New("initiative title is empty")
 	// ErrTooManyInitiatives means the user has reached the daily limit of new initiatives.
@@ -257,8 +259,9 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 	recipients = invitees(recipients, house, byUserID)
 
 	// Started in the evening, the poll reaches the owners in the morning (решение 29).
+	startedAt := time.Now()
 	var runAt time.Time
-	if until, quiet := s.quietHoursEnd(time.Now(), house.Location()); quiet {
+	if until, quiet := s.quietHoursEnd(startedAt, house.Location()); quiet {
 		runAt = until
 	}
 
@@ -274,7 +277,7 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 			return fmt.Errorf("%w: draft", ErrWrongStage)
 		}
 
-		jobs := make([]notify.Job, 0, len(recipients)+1)
+		jobs := make([]notify.Job, 0, 2*len(recipients)+1)
 		for _, r := range recipients {
 			jobs = append(jobs, notify.Job{
 				Type:     notify.TypePollInvite,
@@ -301,6 +304,23 @@ func (s *Service) StartPoll(ctx context.Context, initiativeID, byUserID string, 
 			Payload:  map[string]any{"initiative_id": initiativeID},
 			RunAt:    finishAt,
 		})
+		// One reminder halfway through the support poll. The bot checks the owner's
+		// current vote before sending, so a vote after scheduling suppresses it.
+		remindAt := startedAt.Add(pollEndsAt.Sub(startedAt) / 2)
+		if until, quiet := s.quietHoursEnd(remindAt, house.Location()); quiet {
+			remindAt = until
+		}
+		for _, r := range recipients {
+			if r.MaxUserID <= 0 {
+				continue
+			}
+			jobs = append(jobs, notify.Job{
+				Type:     notify.TypePollReminder,
+				DedupKey: fmt.Sprintf("%s:%s:%s", notify.TypePollReminder, initiativeID, r.UserID),
+				Payload:  map[string]any{"initiative_id": initiativeID, "user_id": r.UserID, "max_user_id": r.MaxUserID},
+				RunAt:    remindAt,
+			})
+		}
 
 		return s.queue.EnqueueTx(ctx, tx, jobs...)
 	})

@@ -19,13 +19,14 @@ type Profiles interface {
 }
 
 type membershipJSON struct {
-	ID      string                `json:"id"`
-	Role    string                `json:"role"`
-	Status  string                `json:"status"`
-	Method  *string               `json:"method"`
-	House   membershipHouseJSON   `json:"house"`
-	Premise membershipPremiseJSON `json:"premise"`
-	Owner   *ownerJSON            `json:"owner"`
+	ID              string                `json:"id"`
+	Role            string                `json:"role"`
+	Status          string                `json:"status"`
+	Method          *string               `json:"method"`
+	RejectionReason *string               `json:"rejection_reason"`
+	House           membershipHouseJSON   `json:"house"`
+	Premise         membershipPremiseJSON `json:"premise"`
+	Owner           *ownerJSON            `json:"owner"`
 }
 
 type membershipHouseJSON struct {
@@ -131,7 +132,7 @@ func (h *handlers) writeOwnerDirectoryError(c *gin.Context, err error, resource 
 func toMembershipJSON(m access.MembershipSummary) membershipJSON {
 	house := m.Premise.House
 	result := membershipJSON{
-		ID: m.ID, Role: m.Role, Status: m.Status, Method: m.Method,
+		ID: m.ID, Role: m.Role, Status: m.Status, Method: m.Method, RejectionReason: m.RejectionReason,
 		House: membershipHouseJSON{
 			ID: house.ID, Slug: house.InviteSlug, Address: house.Address,
 			Region: house.Region, IsDemo: house.IsDemo,

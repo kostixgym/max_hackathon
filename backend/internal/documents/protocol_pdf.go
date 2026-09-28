@@ -35,14 +35,17 @@ type ProtocolPDFData struct {
 
 // ProtocolPDFItem is one agenda question with its fixed result.
 type ProtocolPDFItem struct {
-	Position  int
-	Text      string
-	RuleText  string
-	ForM2     string
-	AgainstM2 string
-	AbstainM2 string
-	Accepted  bool
-	Verdict   string
+	Position       int
+	Text           string
+	RuleText       string
+	ForM2          string
+	ForPercent     string
+	AgainstM2      string
+	AgainstPercent string
+	AbstainM2      string
+	AbstainPercent string
+	Accepted       bool
+	Verdict        string
 }
 
 func ProtocolPDF(data ProtocolPDFData) ([]byte, error) {
@@ -107,8 +110,9 @@ func ProtocolPDF(data ProtocolPDFData) ([]byte, error) {
 		pdf.MultiCell(0, lh, fmt.Sprintf("%d. %s", item.Position, item.Text), "", "L", false)
 		font(body, "")
 		pdf.MultiCell(0, lh, fmt.Sprintf(
-			"«За»: %s м², «против»: %s м², «воздержались»: %s м².\nРешение: %s.",
-			item.ForM2, item.AgainstM2, item.AbstainM2, item.Verdict), "", "L", false)
+			"Правило большинства: %s.\n«За»: %s м² (%s%%), «против»: %s м² (%s%%), «воздержались»: %s м² (%s%%).\nРешение: %s.",
+			item.RuleText, item.ForM2, item.ForPercent, item.AgainstM2, item.AgainstPercent,
+			item.AbstainM2, item.AbstainPercent, item.Verdict), "", "L", false)
 	}
 	pdf.Ln(4)
 

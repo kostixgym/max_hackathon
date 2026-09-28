@@ -255,6 +255,7 @@ export function Receive() {
   const navigate = useNavigate();
   const [number, setNumber] = useState('');
   const [loading, setLoading] = useState(false);
+  const [receiveError, setReceiveError] = useState('');
   const [receivedBallotData, setReceivedBallotData] = useState<{ premise: string; name: string; id: string } | null>(null);
 
   const trackerState = useApi(() => (id ? fetchMeetingTracker(id) : Promise.reject('No ID')), [id]);
@@ -263,12 +264,13 @@ export function Receive() {
   const handleReceive = async (ballotId: string) => {
     if (!id || loading) return;
     setLoading(true);
+    setReceiveError('');
     try {
       await receiveBallot(id, ballotId);
       const b = trackerState.data?.ballots.find(x => x.id === ballotId);
       if (b) setReceivedBallotData({ premise: b.premise_number, name: b.owner_masked_name, id: b.id });
     } catch (e) {
-      alert('Не удалось отметить получение бюллетеня');
+      setReceiveError(e instanceof Error ? e.message : 'Не удалось отметить получение бюллетеня');
     } finally {
       setLoading(false);
     }
@@ -282,14 +284,8 @@ export function Receive() {
     <Screen>
       <Header title="Приём бюллетеня" />
       <Main style={{ gap: 14 }}>
-        <UiButton type="button" variant="secondary" className="qr-scan-card" onClick={() => alert('Сканер QR будет доступен в мобильной версии')}>
-          <span className="circ" style={{ background: 'var(--acc-soft)', color: 'var(--acc-t)', width: 72, height: 72 }}><Icon name="scan" /></span>
-          <MaxTypography.Headline className="h3" variant="small">Сканировать QR</MaxTypography.Headline>
-          <MaxTypography.Text className="cap" style={{ textAlign: 'center' }} variant="detail" color="secondary">QR-код напечатан в углу каждого бюллетеня</MaxTypography.Text>
-        </UiButton>
-        <div className="row" style={{ gap: 12, padding: '0 4px' }}>
-          <div className="hr" style={{ flex: 1 }} /><MaxTypography.Text className="cap" variant="detail" color="secondary">или вручную</MaxTypography.Text><div className="hr" style={{ flex: 1 }} />
-        </div>
+        <Note kind="info">Найдите бюллетень по номеру квартиры. QR-сканирование в этой версии не поддерживается.</Note>
+        {receiveError && <Note kind="neg">{receiveError}</Note>}
         <div className="row" style={{ gap: 8, alignItems: 'flex-end' }}>
           <label className="field" style={{ flex: 1 }}>
             <MaxTypography.Label className="lbl" variant="large-strong">Номер квартиры</MaxTypography.Label>

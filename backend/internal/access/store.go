@@ -51,12 +51,13 @@ type User struct {
 // MembershipSummary is the read model used to bootstrap the mini-app.
 // Owner data always comes from the house's current registry version.
 type MembershipSummary struct {
-	ID      string
-	Role    string
-	Status  string
-	Method  *string
-	Premise registry.Premise
-	Owner   *OwnerSummary
+	ID              string
+	Role            string
+	Status          string
+	Method          *string
+	RejectionReason *string
+	Premise         registry.Premise
+	Owner           *OwnerSummary
 }
 
 // OwnerSummary contains only data safe for an authorized directory response.
@@ -184,7 +185,7 @@ func (s *Store) MembershipsByUser(ctx context.Context, userID string) ([]Members
 		if !ok {
 			return nil, fmt.Errorf("premise %s of membership %s is missing in the registry", m.premiseID, m.id)
 		}
-		item := MembershipSummary{ID: m.id, Role: m.role, Status: m.status, Method: m.method, Premise: premise}
+		item := MembershipSummary{ID: m.id, Role: m.role, Status: m.status, Method: m.method, RejectionReason: m.rejectionReason, Premise: premise}
 		// An owner who left the current registry version has no facts to show.
 		if m.ownerID != nil {
 			if o, ok := ownerByID[*m.ownerID]; ok {
@@ -299,18 +300,19 @@ func (s *Store) HouseOfficerCandidates(ctx context.Context, userID, houseID stri
 
 // membership is a user's link to a premise as the module stores it.
 type membership struct {
-	id        string
-	role      string
-	status    string
-	method    *string
-	premiseID string
-	ownerID   *string
+	id              string
+	role            string
+	status          string
+	method          *string
+	premiseID       string
+	ownerID         *string
+	rejectionReason *string
 }
 
 // memberships returns the user's links that are not revoked.
 func (s *Store) memberships(ctx context.Context, userID string) ([]membership, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, role, status, method, premise_id::text, owner_id::text
+		SELECT id::text, role, status, method, premise_id::text, owner_id::text, rejection_reason
 		FROM memberships
 		WHERE user_id = $1::uuid AND status <> 'revoked'`, userID)
 	if err != nil {
@@ -321,7 +323,7 @@ func (s *Store) memberships(ctx context.Context, userID string) ([]membership, e
 	var result []membership
 	for rows.Next() {
 		var m membership
-		if err := rows.Scan(&m.id, &m.role, &m.status, &m.method, &m.premiseID, &m.ownerID); err != nil {
+		if err := rows.Scan(&m.id, &m.role, &m.status, &m.method, &m.premiseID, &m.ownerID, &m.rejectionReason); err != nil {
 			return nil, fmt.Errorf("scan user membership: %w", err)
 		}
 		result = append(result, m)

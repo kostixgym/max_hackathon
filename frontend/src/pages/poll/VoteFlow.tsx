@@ -72,6 +72,8 @@ export function VotePage() {
 
   const weightM2 = ownerMemberships.reduce((sum, membership) => sum + (parseM2(membership.owner?.weight_m2 ?? null) || 0), 0);
   const areaM2 = ownerMemberships.reduce((sum, membership) => sum + (parseM2(membership.premise.display_area_m2) || 0), 0);
+  const totalHouseM2 = parseM2(initiative.total_area_m2) || 0;
+  const weightPercent = totalHouseM2 > 0 ? weightM2 / totalHouseM2 * 100 : 0;
 
   return (
     <Screen>
@@ -92,6 +94,9 @@ export function VotePage() {
             </MaxTypography.Display>
             <MaxTypography.Text className="cap" variant="detail" color="secondary">
               {fmtNum(areaM2)} м² суммарно по {ownerMemberships.length} {ownerMemberships.length === 1 ? 'квартире' : 'квартирам'}
+            </MaxTypography.Text>
+            <MaxTypography.Text className="cap" variant="detail" color="secondary">
+              {weightPercent.toLocaleString('ru-RU', { maximumFractionDigits: 3 })}% от общей площади дома
             </MaxTypography.Text>
           </div>
           <Badge kind="calc" style={{ alignSelf: 'center' }} />
@@ -216,6 +221,8 @@ export function CountedPage() {
   const myVote = initiative.my_vote;
   if (!myVote) return <Screen><Header nav="close" title="" /><Main><Note kind="info">Ваш ответ ещё не зарегистрирован.</Note></Main><Foot><Btn onClick={() => navigate(`/initiatives/${id}/vote`)}>Перейти к голосованию</Btn></Foot></Screen>;
   const weightM2 = myVote.weight_m2 ? parseM2(myVote.weight_m2) || 0 : ownerMemberships.reduce((sum, membership) => sum + (parseM2(membership.owner?.weight_m2 ?? null) || 0), 0);
+  const totalHouseM2 = parseM2(initiative.total_area_m2) || 0;
+  const weightPercent = totalHouseM2 > 0 ? weightM2 / totalHouseM2 * 100 : 0;
   const choice = myVote?.choice === 'for' ? '«за»' : '«против»';
 
   return (
@@ -228,7 +235,7 @@ export function CountedPage() {
           </span>
           <MaxTypography.Headline className="h2" variant="medium">Голос учтён</MaxTypography.Headline>
           <MaxTypography.Text className="t2" variant="body" color="secondary">
-            Вы — {choice}. Ваш голос в опросе: {fmtM2(weightM2)}.
+            Вы — {choice}. Ваш голос в опросе: {fmtM2(weightM2)} м² ({weightPercent.toLocaleString('ru-RU', { maximumFractionDigits: 3 })}% площади дома).
           </MaxTypography.Text>
         </div>
         <Card className="card counted-initiative-card" style={{ gap: 12 }}>

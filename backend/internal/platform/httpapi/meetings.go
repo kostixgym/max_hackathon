@@ -29,6 +29,7 @@ type Meetings interface {
 	RecordGISResults(ctx context.Context, meetingID, byUserID string, input meeting.GISResults) (meeting.GISResults, error)
 	Preview(ctx context.Context, meetingID, viewerID string) (meeting.Result, error)
 	Finalize(ctx context.Context, meetingID, byUserID string) (meeting.Final, error)
+	ProtocolData(ctx context.Context, meetingID string) (meeting.Protocol, error)
 	FinishVoting(ctx context.Context, meetingID, byUserID string) (meeting.View, error)
 	FillBallots(ctx context.Context, meetingID, byUserID string) (meeting.View, error)
 }
@@ -74,6 +75,7 @@ func (h *handlers) createMeeting(c *gin.Context) {
 	}
 
 	var body struct {
+		Path             string     `json:"path" binding:"omitempty,oneof=A B"`
 		Form             string     `json:"form" binding:"required,oneof=gis_electronic paper_absentee"`
 		NoticeAt         *time.Time `json:"notice_at" binding:"required"`
 		VotingStartsAt   *time.Time `json:"voting_starts_at" binding:"required"`
@@ -91,6 +93,7 @@ func (h *handlers) createMeeting(c *gin.Context) {
 	view, err := h.meetings.Create(c.Request.Context(), meeting.CreateInput{
 		InitiativeID:     c.Param("id"),
 		ByUserID:         id.UserID,
+		Path:             body.Path,
 		Form:             body.Form,
 		NoticeAt:         *body.NoticeAt,
 		VotingStartsAt:   *body.VotingStartsAt,

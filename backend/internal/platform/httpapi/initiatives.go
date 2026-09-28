@@ -175,6 +175,34 @@ func (h *handlers) startPoll(c *gin.Context) {
 	}
 }
 
+func (h *handlers) selectPathB(c *gin.Context) {
+	if h.pathSelector == nil {
+		writeError(c, http.StatusServiceUnavailable, "not_ready", "Выбор пути временно недоступен")
+		return
+	}
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+		return
+	}
+	err := h.pathSelector.SelectPathB(c.Request.Context(), c.Param("id"), id.UserID)
+	switch {
+	case err == nil:
+		writeJSON(c, http.StatusOK, gin.H{"path": "B"})
+	case errors.Is(err, initiatives.ErrNotFound):
+		writeError(c, http.StatusNotFound, "initiative_not_found", "Инициатива не найдена")
+	case errors.Is(err, initiatives.ErrNotInitiator):
+		writeError(c, http.StatusForbidden, "not_initiator", "Выбрать путь может инициатор")
+	case errors.Is(err, initiatives.ErrPollStillOpen):
+		writeError(c, http.StatusConflict, "poll_open", "Дождитесь завершения опроса")
+	case errors.Is(err, initiatives.ErrWrongStage), errors.Is(err, initiatives.ErrPathAlreadyChosen):
+		writeError(c, http.StatusConflict, "wrong_stage", "Путь к собранию уже выбран или недоступен")
+	default:
+		h.log.Error("select path B", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось выбрать самостоятельное проведение")
+	}
+}
+
 // myVote is the vote from the mini-app; in the chat the same vote is cast by buttons.
 func (h *handlers) myVote(c *gin.Context) {
 	id, ok := IdentityFrom(c)
@@ -336,7 +364,19 @@ func (h *handlers) initiativeCard(c *gin.Context) {
 		return
 	}
 
-	card := toCardJSON(in, id.UserID, in.Actions(initiatives.Viewer{UserID: id.UserID, Owner: owner}, time.Now()))
+	now := time.Now()
+	viewer := initiatives.Viewer{UserID: id.UserID, Owner: owner}
+	if in.Stage == initiatives.StagePoll && h.pollProgress != nil {
+		progress, err := h.pollProgress.Progress(c.Request.Context(), in.ID)
+		if err != nil {
+			h.log.Error("poll progress for initiative actions", "err", err)
+			writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить инициативу, попробуйте ещё раз")
+			return
+		}
+		viewer.DemandReached = progress.DemandReached()
+		viewer.PollClosed = in.PollEndsAt != nil && !now.Before(*in.PollEndsAt)
+	}
+	card := toCardJSON(in, id.UserID, in.Actions(viewer, now))
 	if voted {
 		card.MyVote = &myVoteCardJSON{
 			Choice:        vote.Choice,

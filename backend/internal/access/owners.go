@@ -25,6 +25,127 @@ type OwnerLink struct {
 	PremiseNumber string
 }
 
+type OwnerClaimRequest struct {
+	MembershipID string
+	OwnerID      string
+	Owner        OwnerSummary
+}
+
+// ClaimCandidates returns masked owners of only the premise attached to the
+// caller's pending guest membership.
+func (s *Store) ClaimCandidates(ctx context.Context, userID, membershipID string) ([]OwnerSummary, error) {
+	var premiseID string
+	err := s.pool.QueryRow(ctx, `SELECT premise_id::text FROM memberships WHERE id=$1::uuid AND user_id=$2::uuid AND role='guest' AND status='pending'`, membershipID, userID).Scan(&premiseID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load owner claim premise: %w", err)
+	}
+	owners, err := s.registry.PremiseOwners(ctx, premiseID)
+	if err != nil {
+		return nil, err
+	}
+	return maskOwners(owners), nil
+}
+
+// ClaimOwner records the user's selected owner record, leaving approval to the
+// management company. Owner and premise are checked against the active registry.
+func (s *Store) ClaimOwner(ctx context.Context, userID, membershipID, ownerID string) error {
+	var premiseID string
+	err := s.pool.QueryRow(ctx, `SELECT premise_id::text FROM memberships WHERE id=$1::uuid AND user_id=$2::uuid AND status='pending' AND role IN ('guest','owner')`, membershipID, userID).Scan(&premiseID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("load owner claim: %w", err)
+	}
+	owners, err := s.registry.PremiseOwners(ctx, premiseID)
+	if err != nil {
+		return err
+	}
+	var matched bool
+	for _, owner := range owners {
+		if owner.ID == ownerID {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return ErrNotFound
+	}
+	_, err = s.pool.Exec(ctx, `UPDATE memberships SET role='owner', owner_id=$3::uuid, status='pending', method=NULL, rejection_reason=NULL, rejected_at=NULL
+		WHERE id=$1::uuid AND user_id=$2::uuid AND status IN ('pending','rejected')`, membershipID, userID, ownerID)
+	if err != nil {
+		return fmt.Errorf("record owner claim: %w", err)
+	}
+	return nil
+}
+
+// PendingOwnerClaims lists pending owner claims for premises managed by one of
+// the caller's authorized houses. The HTTP adapter performs the organization ACL.
+func (s *Store) PendingOwnerClaims(ctx context.Context, houseIDs []string) ([]OwnerClaimRequest, error) {
+	ownerIDs := make([]string, 0)
+	ownersByID := make(map[string]OwnerSummary)
+	for _, houseID := range houseIDs {
+		owners, err := s.registry.HouseOwners(ctx, houseID)
+		if err != nil {
+			return nil, err
+		}
+		for _, owner := range maskOwners(owners) {
+			ownerIDs = append(ownerIDs, owner.ID)
+			ownersByID[owner.ID] = owner
+		}
+	}
+	if len(ownerIDs) == 0 {
+		return []OwnerClaimRequest{}, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT id::text, owner_id::text FROM memberships
+		WHERE role='owner' AND status='pending' AND owner_id=ANY($1::uuid[]) ORDER BY created_at`, ownerIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list pending owner claims: %w", err)
+	}
+	defer rows.Close()
+	result := make([]OwnerClaimRequest, 0)
+	for rows.Next() {
+		var request OwnerClaimRequest
+		if err := rows.Scan(&request.MembershipID, &request.OwnerID); err != nil {
+			return nil, fmt.Errorf("scan pending owner claim: %w", err)
+		}
+		request.Owner = ownersByID[request.OwnerID]
+		result = append(result, request)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list pending owner claims: %w", err)
+	}
+	return result, nil
+}
+
+// DecideOwnerClaim approves or rejects a pending claim. Only the HTTP adapter
+// may call it after checking the staff member's organization.
+func (s *Store) DecideOwnerClaim(ctx context.Context, membershipID, staffID string, approve bool, reason string) error {
+	var tag pgconn.CommandTag
+	var err error
+	if approve {
+		tag, err = s.pool.Exec(ctx, `UPDATE memberships SET status='verified', method='uk_manual', verified_by=$2::uuid, verified_at=now(), rejection_reason=NULL, rejected_at=NULL
+			WHERE id=$1::uuid AND role='owner' AND status='pending'`, membershipID, staffID)
+	} else {
+		tag, err = s.pool.Exec(ctx, `UPDATE memberships SET status='rejected', rejection_reason=$3, rejected_at=now()
+			WHERE id=$1::uuid AND role='owner' AND status='pending'`, membershipID, staffID, reason)
+	}
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == pgerrUniqueViolation && pgErr.ConstraintName == "memberships_one_verified_owner" {
+			return ErrOwnerTaken
+		}
+		return fmt.Errorf("decide owner claim: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // ErrNoOwnerLink means the user has no verified owner membership.
 var ErrNoOwnerLink = errors.New("no verified owner membership")
 

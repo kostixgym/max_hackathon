@@ -500,7 +500,7 @@ func TestInitiativeCard(t *testing.T) {
 	if ok, reason := c.action("start_poll"); ok || reason != "not_initiator" {
 		t.Fatalf("start_poll = %v %q", ok, reason)
 	}
-	if ok, reason := c.action("select_path_a"); ok || reason != "not_implemented" {
+	if ok, reason := c.action("select_path_a"); ok || reason != "not_initiator" {
 		t.Fatalf("select_path_a = %v %q", ok, reason)
 	}
 	if strings.Contains(rec.Body.String(), `"reason_code":""`) {

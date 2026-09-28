@@ -19,6 +19,8 @@ const (
 	// TypePollInvite sends the support-poll message with voting buttons
 	// to one verified owner.
 	TypePollInvite = "poll_invite"
+	// TypePollReminder sends one mid-term reminder; the handler skips owners who voted.
+	TypePollReminder = "poll_reminder"
 	// TypePollFinished sends the result of the poll to the initiator when its term ends.
 	TypePollFinished = "poll_finished"
 	// TypeQuestionAsked relays a neighbour's question to the initiator.

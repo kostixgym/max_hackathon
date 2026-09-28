@@ -41,6 +41,40 @@ type PollProgress interface {
 	Progress(ctx context.Context, initiativeID string) (poll.Progress, error)
 }
 
+type PollVotes interface {
+	MyVote(ctx context.Context, initiativeID, userID string) (poll.MyVote, bool, error)
+}
+
+// Reminder executes a scheduled poll reminder, skipping anyone who has already
+// answered or whose poll has since closed.
+type Reminder struct {
+	Inviter *PollInviter
+	Votes   PollVotes
+}
+
+func (r *Reminder) HandleJob(ctx context.Context, payload json.RawMessage) error {
+	var job struct {
+		InitiativeID string `json:"initiative_id"`
+		UserID       string `json:"user_id"`
+		MaxUserID    int64  `json:"max_user_id"`
+	}
+	if err := json.Unmarshal(payload, &job); err != nil {
+		return fmt.Errorf("poll reminder payload: %w", err)
+	}
+	if job.InitiativeID == "" || job.UserID == "" || job.MaxUserID <= 0 {
+		return fmt.Errorf("poll reminder payload is incomplete")
+	}
+	if r.Votes == nil || r.Inviter == nil {
+		return fmt.Errorf("poll reminder dependencies are not configured")
+	}
+	if _, voted, err := r.Votes.MyVote(ctx, job.InitiativeID, job.UserID); err != nil {
+		return fmt.Errorf("check poll reminder vote: %w", err)
+	} else if voted {
+		return nil
+	}
+	return r.Inviter.HandleJob(ctx, payload)
+}
+
 // HandleJob implements notify.JobHandler for poll_invite payloads.
 func (p *PollInviter) HandleJob(ctx context.Context, payload json.RawMessage) error {
 	var job struct {

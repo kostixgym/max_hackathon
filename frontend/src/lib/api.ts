@@ -67,6 +67,22 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export async function downloadPDF(url: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_BASE}${url}`, { headers: authHeaders() });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiException(res.status, body?.error?.code ?? 'unknown', body?.error?.message ?? 'Не удалось скачать документ');
+  }
+  const objectURL = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = objectURL;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectURL);
+}
+
 // Types matching backend JSON responses
 
 export interface MeUser {
@@ -148,6 +164,7 @@ export interface Membership {
   role: string; // "guest" | "resident" | "owner"
   status: string; // "pending" | "verified" | "rejected" | "revoked"
   method: string | null; // "phone" | "account" | "uk_manual" | "demo"
+  rejection_reason?: string | null;
   house: MembershipHouse;
   premise: MembershipPremise;
   owner: Owner | null;
@@ -223,6 +240,24 @@ export async function attachGuest(houseSlug: string, premiseNumber: string): Pro
 export async function verifyMembershipPhone(membershipId: string, contact: { phone: string; auth_date: string; hash: string }): Promise<{ role: string; status: string; method: string }> {
   return request(`/memberships/${encodeURIComponent(membershipId)}/verify/phone`, {
     method: 'POST', body: JSON.stringify(contact),
+  });
+}
+
+export async function fetchOwnerClaimCandidates(membershipId: string): Promise<{ owners: Owner[] }> {
+  return request(`/memberships/${encodeURIComponent(membershipId)}/claim-candidates`);
+}
+
+export async function submitOwnerClaim(membershipId: string, ownerId: string): Promise<void> {
+  await request(`/memberships/${encodeURIComponent(membershipId)}/claim`, { method: 'POST', body: JSON.stringify({ owner_id: ownerId }) });
+}
+
+export interface OwnerRequest { membership_id: string; owner: Owner; }
+export async function fetchOrgOwnerRequests(orgId: string): Promise<{ requests: OwnerRequest[] }> {
+  return request(`/orgs/${encodeURIComponent(orgId)}/owner-requests`);
+}
+export async function decideOrgOwnerRequest(orgId: string, membershipId: string, approve: boolean): Promise<void> {
+  await request(`/orgs/${encodeURIComponent(orgId)}/owner-requests/${encodeURIComponent(membershipId)}/${approve ? 'approve' : 'reject'}`, {
+    method: 'POST', body: approve ? '{}' : JSON.stringify({ reason: 'Данные заявки не совпали с реестром собственников' }),
   });
 }
 
@@ -403,6 +438,10 @@ export async function startPoll(initiativeId: string, endsAt?: string): Promise<
   });
 }
 
+export async function selectPathB(initiativeId: string): Promise<void> {
+  await request(`/initiatives/${encodeURIComponent(initiativeId)}/select-path-b`, { method: 'POST', body: '{}' });
+}
+
 // Poll & Voting
 
 export interface PollProgress {
@@ -573,6 +612,7 @@ export interface MeetingTracker {
 }
 
 export interface CreateMeetingInput {
+  path?: 'A' | 'B';
   form: 'gis_electronic' | 'paper_absentee';
   notice_at: string; // RFC3339
   voting_starts_at: string;

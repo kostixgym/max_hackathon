@@ -28,6 +28,7 @@ type fakeMeetings struct {
 	gis      meeting.GISResults
 	result   meeting.Result
 	final    meeting.Final
+	protocol meeting.Protocol
 	err      error
 
 	created   meeting.CreateInput
@@ -108,6 +109,28 @@ func (f *fakeMeetings) FinishVoting(context.Context, string, string) (meeting.Vi
 
 func (f *fakeMeetings) FillBallots(context.Context, string, string) (meeting.View, error) {
 	return f.view, f.err
+}
+
+func (f *fakeMeetings) ProtocolData(context.Context, string) (meeting.Protocol, error) {
+	return f.protocol, f.err
+}
+
+func TestMeetingProtocolPDF(t *testing.T) {
+	protocol := meeting.Protocol{
+		HouseAddress: "г. Казань, ул. Тестовая, д. 1", Attempt: 1, Form: meeting.FormPaperAbsentee,
+		NoticeAt:       time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
+		VotingStartsAt: time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC),
+		VotingEndsAt:   time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC),
+		FinalizedAt:    time.Date(2026, 10, 21, 0, 0, 0, 0, time.UTC), Outcome: meeting.OutcomeHeld,
+		TotalM2: big.NewRat(300000, 100), ParticipantsM2: big.NewRat(200000, 100), QuorumReached: true,
+		Items: []meeting.ItemResult{{Position: 1, Text: "Установить камеры", MajorityRule: "two_thirds_of_all",
+			ForM2: big.NewRat(150000, 100), AgainstM2: big.NewRat(30000, 100), AbstainM2: big.NewRat(20000, 100), Accepted: true}},
+	}
+	fake := &fakeMeetings{view: sampleMeetingView(), protocol: protocol}
+	rec := callJSON(newMeetingServer(fake), http.MethodGet, "/api/v1/meetings/m-1/protocol.pdf", "")
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/pdf" || !strings.HasPrefix(rec.Body.String(), "%PDF") {
+		t.Fatalf("protocol PDF response: status=%d content-type=%q body=%q", rec.Code, rec.Header().Get("Content-Type"), rec.Body.String()[:min(rec.Body.Len(), 20)])
+	}
 }
 
 func newMeetingServer(m *fakeMeetings) http.Handler {

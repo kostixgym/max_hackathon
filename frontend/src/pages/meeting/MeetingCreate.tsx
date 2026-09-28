@@ -1,9 +1,9 @@
 import { Typography as MaxTypography } from '@maxhub/max-ui';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Btn, Card, Foot, Header, Main, Note, Opt, Screen } from '../../components/ui';
 import { useApi } from '../../hooks/useApi';
-import { createMeeting, fetchInitiative, fetchInitiativeDemand, fetchMeetingOfficerCandidates, fetchOrgHouses, fetchOrgs, type CreateMeetingInput } from '../../lib/api';
+import { createMeeting, fetchInitiative, fetchInitiativeDemand, fetchMeetingOfficerCandidates, fetchMe, fetchOrgHouses, fetchOrgs, type CreateMeetingInput } from '../../lib/api';
 
 function dateTimeValue(offsetDays: number): string {
   const date = new Date(Date.now() + offsetDays * 24 * 60 * 60 * 1000);
@@ -14,12 +14,16 @@ function dateTimeValue(offsetDays: number): string {
 export function MeetingCreatePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const pathB = searchParams.get('path') === 'B';
   const initiativeState = useApi(() => id ? fetchInitiative(id) : Promise.reject(new Error('Инициатива не выбрана')), [id]);
   const demandState = useApi(() => id ? fetchInitiativeDemand(id) : Promise.reject(new Error('Требование не выбрано')), [id]);
+  const meState = useApi(() => fetchMe());
   const orgsState = useApi(() => fetchOrgs());
   const orgIds = orgsState.data?.orgs.map((org) => org.id).join(',') ?? '';
   const housesState = useApi(async () => (await Promise.all((orgIds ? orgIds.split(',') : []).map(fetchOrgHouses))).flatMap((item) => item.houses), [orgIds]);
-  const house = housesState.data?.find((item) => item.id === initiativeState.data?.house_id);
+  const house = housesState.data?.find((item) => item.id === initiativeState.data?.house_id)
+    ?? meState.data?.memberships.find((item) => item.house.id === initiativeState.data?.house_id)?.house;
   const candidatesState = useApi(() => house ? fetchMeetingOfficerCandidates(house.slug) : Promise.resolve({ owners: [] }), [house?.slug]);
 
   const [form, setForm] = useState<CreateMeetingInput['form']>('paper_absentee');
@@ -35,15 +39,15 @@ export function MeetingCreatePage() {
     if (demandState.data) setForm(demandState.data.channel === 'gosuslugi_dom' ? 'gis_electronic' : 'paper_absentee');
   }, [demandState.data]);
 
-  if (initiativeState.loading || demandState.loading || orgsState.loading || housesState.loading || candidatesState.loading) return <Screen><Header title="Новое собрание" /><Main><Card className="card">Загружаем данные дома…</Card></Main></Screen>;
-  if (initiativeState.error || demandState.error || orgsState.error || housesState.error || candidatesState.error || !initiativeState.data || !demandState.data || !id) return <Screen><Header title="Новое собрание" /><Main><Note kind="neg">Не удалось загрузить данные для собрания.</Note></Main></Screen>;
-  if (!house) return <Screen><Header title="Новое собрание" /><Main><Note kind="info">Выберите дом вашей управляющей организации с инициативой на этапе требования.</Note></Main></Screen>;
+  if (initiativeState.loading || meState.loading || (!pathB && (demandState.loading || orgsState.loading || housesState.loading)) || candidatesState.loading) return <Screen><Header title="Новое собрание" /><Main><Card className="card">Загружаем данные дома…</Card></Main></Screen>;
+  if (initiativeState.error || meState.error || (!pathB && (demandState.error || orgsState.error || housesState.error || !demandState.data)) || candidatesState.error || !initiativeState.data || !id) return <Screen><Header title="Новое собрание" /><Main><Note kind="neg">Не удалось загрузить данные для собрания.</Note></Main></Screen>;
+  if (!house) return <Screen><Header title="Новое собрание" /><Main><Note kind="info">Нет подтверждённой привязки к дому с этой инициативой.</Note></Main></Screen>;
 
   const candidates = candidatesState.data?.owners ?? [];
   const isDemo = house.is_demo;
   const validDates = notice && starts && ends && new Date(starts) >= new Date(notice) && new Date(ends) > new Date(starts)
     && (isDemo || new Date(starts).getTime() - new Date(notice).getTime() >= 10 * 24 * 60 * 60 * 1000);
-  const canSubmit = initiativeState.data.stage === 'demand' && demandState.data.status === 'delivered' && Boolean(validDates && chair && secretary && chair !== secretary);
+  const canSubmit = (pathB ? initiativeState.data.stage === 'poll' : initiativeState.data.stage === 'demand' && demandState.data?.status === 'delivered') && Boolean(validDates && chair && secretary && chair !== secretary);
 
   const submit = async () => {
     if (!canSubmit || busy) return;
@@ -51,6 +55,7 @@ export function MeetingCreatePage() {
     setError('');
     try {
       const meeting = await createMeeting(id, {
+        path: pathB ? 'B' : 'A',
         form,
         notice_at: new Date(notice).toISOString(),
         voting_starts_at: new Date(starts).toISOString(),
@@ -68,7 +73,7 @@ export function MeetingCreatePage() {
   return <Screen>
     <Header title="Новое собрание" />
     <Main className="template-main">
-      <div className="template-intro"><MaxTypography.Label className="template-eyebrow" variant="medium-strong">КАБИНЕТ УК</MaxTypography.Label><MaxTypography.Headline variant="medium">Провести собрание</MaxTypography.Headline><MaxTypography.Text variant="body" color="secondary">{initiativeState.data.title} · {house.address}</MaxTypography.Text></div>
+      <div className="template-intro"><MaxTypography.Label className="template-eyebrow" variant="medium-strong">{pathB ? 'ИНИЦИАТОР' : 'КАБИНЕТ УК'}</MaxTypography.Label><MaxTypography.Headline variant="medium">Провести собрание</MaxTypography.Headline><MaxTypography.Text variant="body" color="secondary">{initiativeState.data.title} · {house.address}</MaxTypography.Text></div>
       <Card className="card template-section">
         <div className="template-section-heading"><span className="template-section-number">1</span><MaxTypography.Headline variant="small">Форма собрания</MaxTypography.Headline></div>
         <div className="template-choice-group" role="group" aria-label="Форма собрания">
@@ -92,8 +97,9 @@ export function MeetingCreatePage() {
           {chair && chair === secretary && <Note kind="neg">Председатель и секретарь должны быть разными собственниками.</Note>}
         </>}
       </Card>
-      {initiativeState.data.stage !== 'demand' && <Note kind="info">Собрание можно создать, когда инициатива перешла на этап требования.</Note>}
-      {demandState.data.status !== 'delivered' && <Note kind="info">Сначала отметьте передачу требования в УК.</Note>}
+      {pathB && initiativeState.data.poll_ends_at && new Date(initiativeState.data.poll_ends_at) > new Date() && <Note kind="info">Дождитесь завершения опроса, затем сможете открыть собрание.</Note>}
+      {!pathB && initiativeState.data.stage !== 'demand' && <Note kind="info">Собрание через УК доступно после создания требования.</Note>}
+      {!pathB && demandState.data?.status !== 'delivered' && <Note kind="info">Сначала отметьте передачу требования в УК.</Note>}
       {error && <Note kind="neg">{error}</Note>}
     </Main>
     <Foot><Btn onClick={submit} disabled={!canSubmit || busy}>{busy ? 'Создаём…' : 'Создать собрание'}</Btn></Foot>
