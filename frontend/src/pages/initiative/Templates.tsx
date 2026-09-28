@@ -1,7 +1,7 @@
 import { Typography as MaxTypography } from '@maxhub/max-ui';
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Btn, Card, Cell, Foot, Header, IconButton, Main, Note, Opt, Screen, Tile, UiInput, UiList, useTheme } from '../../components/ui';
+import { Btn, Card, Cell, Foot, Header, IconButton, Main, Note, Opt, Screen, Tile, UiInput, UiList } from '../../components/ui';
 import type { IconName } from '../../components/Icon';
 import { useApi } from '../../hooks/useApi';
 import { createInitiative, fetchMe, fetchTemplate, fetchTemplates, type MeResponse } from '../../lib/api';
@@ -41,21 +41,6 @@ function templatePath(code: string, houseSlug: string): string {
   return `/templates/${encodeURIComponent(code)}?house=${encodeURIComponent(houseSlug)}`;
 }
 
-function TemplateThemeSwitch() {
-  const { theme, changeTheme } = useTheme();
-  return (
-    <div className="template-theme-row">
-      <span className="template-theme-label">Тема</span>
-      <div className="template-theme-switch" role="group" aria-label="Тема оформления">
-        <button type="button" className={theme === 'light' ? 'selected' : ''} aria-pressed={theme === 'light'}
-          onClick={() => changeTheme('light')}>Светлая</button>
-        <button type="button" className={theme === 'dark' ? 'selected' : ''} aria-pressed={theme === 'dark'}
-          onClick={() => changeTheme('dark')}>Тёмная</button>
-      </div>
-    </div>
-  );
-}
-
 export function Templates() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -82,8 +67,6 @@ export function Templates() {
           <MaxTypography.Headline className="template-title" variant="medium">Начните с готового решения</MaxTypography.Headline>
           <MaxTypography.Text variant="body" color="secondary">Шаблон подскажет, что обсудить с соседями и какие вопросы вынести на собрание.</MaxTypography.Text>
         </div>
-        <TemplateThemeSwitch />
-
         {houses.length === 0 ? (
           <><Note kind="info">Сначала подтвердите квартиру, чтобы создать инициативу.</Note><Btn kind="secondary" to="/attach">Добавить квартиру</Btn></>
         ) : (
@@ -120,7 +103,7 @@ export function Templates() {
         {templates.length > 0 ? (
           <UiList className="template-list">
             {templates.map((template) => {
-              const supported = template.code === 'video_surveillance';
+              const supported = ['video_surveillance', 'intercom_upgrade', 'courtyard_lighting'].includes(template.code);
               return (
                 <Cell key={template.code}
                   lead={<Tile icon={templateIcons[template.code] || 'edit'} style={{ width: 52, height: 52 }} />}
@@ -171,8 +154,30 @@ export function TemplateForm() {
   if (!house) {
     return <Screen><Header title={template.name} onNav={() => navigate(backPath)} /><Main><Note kind="info">Выберите дом с подтверждённой квартирой, чтобы создать инициативу.</Note><Btn to={P.templates}>Выбрать дом</Btn></Main></Screen>;
   }
-  if (template.code !== 'video_surveillance') {
+  if (template.code !== 'video_surveillance' && template.code !== 'intercom_upgrade' && template.code !== 'courtyard_lighting') {
     return <Screen><Header title={template.name} onNav={() => navigate(backPath)} /><Main><Note kind="info">Форма для этого шаблона пока не готова.</Note><Btn to={backPath}>К шаблонам</Btn></Main></Screen>;
+  }
+
+  if (template.code !== 'video_surveillance') {
+    const isIntercom = template.code === 'intercom_upgrade';
+    const genericTitle = title === 'Видеонаблюдение в подъездах' ? template.name : (title || template.name);
+    const genericCount = count;
+    const genericCanSubmit = Boolean(genericTitle.trim() && genericCount >= 1 && genericCount <= 1000 && (isIntercom || cost === '' || Number(cost) <= 100_000_000));
+    const submitGeneric = async () => {
+      if (!genericCanSubmit || submitting) return;
+      setSubmitting(true); setSubmitError('');
+      try {
+        const params = isIntercom ? { entrances: genericCount, payment_method: payment } : { fixture_count: genericCount, ...(cost ? { estimated_cost_rub: Number(cost) } : {}) };
+        const description = isIntercom ? `${genericCount} подъездов. Оплата: ${paymentLabels[payment].toLowerCase()}.` : `${genericCount} светильников${cost ? `, ориентир ${cost} ₽` : ''}.`;
+        const created = await createInitiative(house.id, { template_code: template.code, title: genericTitle.trim(), description, params });
+        navigate(`/initiatives/${created.id}`, { replace: true });
+      } catch (error) { setSubmitError(error instanceof Error ? error.message : 'Не удалось создать инициативу.'); }
+      finally { setSubmitting(false); }
+    };
+    return <Screen><Header title="Новая инициатива" onNav={() => navigate(backPath)} right={<span className="template-draft-badge">Черновик</span>} /><Main className="template-main">
+      <div className="template-intro"><MaxTypography.Label className="template-eyebrow" variant="medium-strong">ШАБЛОН · {template.name.toUpperCase()}</MaxTypography.Label><MaxTypography.Headline className="template-title" variant="medium">{template.name}</MaxTypography.Headline><MaxTypography.Text variant="body" color="secondary">Уточните детали для {house.address}.</MaxTypography.Text></div>
+      <Card className="card template-section"><label className="field"><MaxTypography.Label className="lbl" variant="large-strong">Название инициативы</MaxTypography.Label><UiInput value={title} onChange={(event) => setTitle(event.target.value)} maxLength={160} /></label><label className="field"><MaxTypography.Label className="lbl" variant="large-strong">{isIntercom ? 'Количество подъездов' : 'Количество светильников'}</MaxTypography.Label><UiInput inputMode="numeric" value={String(count)} onChange={(event) => setCount(Math.max(1, Math.min(1000, Number(event.target.value.replace(/\D/g, '')) || 1)))} /></label>{!isIntercom && <label className="field"><MaxTypography.Label className="lbl" variant="large-strong">Ориентир стоимости, ₽</MaxTypography.Label><UiInput inputMode="numeric" value={cost} onChange={(event) => setCost(event.target.value.replace(/\D/g, ''))} /></label>}{isIntercom && <div className="field"><MaxTypography.Label className="lbl" variant="large-strong">Способ оплаты</MaxTypography.Label><Opt on={payment === 'management_bill'} onClick={() => setPayment('management_bill')} title={paymentLabels.management_bill} /><Opt on={payment === 'special_assessment'} onClick={() => setPayment('special_assessment')} title={paymentLabels.special_assessment} /></div>}{submitError && <Note kind="neg">{submitError}</Note>}</Card>
+    </Main><Foot><Btn onClick={submitGeneric} disabled={!genericCanSubmit || submitting}>{submitting ? 'Создание…' : 'Создать черновик'}</Btn></Foot></Screen>;
   }
 
   const trimmedTitle = title.trim();
@@ -212,8 +217,6 @@ export function TemplateForm() {
           <MaxTypography.Headline className="template-title" variant="medium">Как будут работать камеры</MaxTypography.Headline>
           <MaxTypography.Text variant="body" color="secondary">Уточните проект для {house.address}. Эти детали увидят соседи перед опросом.</MaxTypography.Text>
         </div>
-        <TemplateThemeSwitch />
-
         <Card className="card template-section">
           <div className="template-section-heading"><span className="template-section-number">1</span><MaxTypography.Headline variant="small">Об инициативе</MaxTypography.Headline></div>
           <label className="field">
@@ -263,7 +266,7 @@ export function TemplateForm() {
         </Card>
 
         <Card className="card template-section">
-          <div className="template-section-heading"><span className="template-section-number">4</span><MaxTypography.Headline variant="small">Повестка собрания</MaxTypography.Headline></div>
+          <div className="template-section-heading"><span className="template-section-number">4</span><MaxTypography.Headline variant="small">Вопросы собрания</MaxTypography.Headline></div>
           <MaxTypography.Text variant="body" color="secondary">Эти вопросы появятся в бюллетене. Формулировки и правила подсчёта уже подготовлены.</MaxTypography.Text>
           <div className="template-agenda">
             {template.agenda_items.map((item) => (

@@ -43,7 +43,7 @@ export function App() {
       {/* HashRouter: мини-приложение открывается по одному URL из MAX, сервер не знает о путях */}
       <HashRouter>
         <Routes>
-          <Route path="/__screens" element={<Catalog theme={theme} onTheme={changeTheme} />} />
+          <Route path="/__screens" element={<Catalog />} />
           {applicationRoutes.map(({ path, Component }) => <Route key={path} path={path} element={<Component />} />)}
           {/* The concrete template URL is handled by /templates/:code, which supplies the code param. */}
           {groups.flatMap((g) => g.screens).filter(({ path }) => path !== P.templateForm).map(({ path, Component }) => (

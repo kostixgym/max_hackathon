@@ -23,7 +23,7 @@ function AgendaCard({ items }: { items: { position: number; text: string; majori
   return (
     <Card className="card" style={{ gap: 0 }}>
       <div className="between" style={{ paddingBottom: 8 }}>
-        <MaxTypography.Headline className="h3" variant="small">Повестка</MaxTypography.Headline>
+        <MaxTypography.Headline className="h3" variant="small">Вопросы собрания</MaxTypography.Headline>
       </div>
       {items.map((a, i) => (
         <div key={a.position} className="between" style={{ padding: i === items.length - 1 ? '10px 0 0' : '10px 0', borderTop: '1px solid var(--line)' }}>

@@ -14,6 +14,8 @@ import { MyHouses, MyHousesEmpty } from './pages/legacy/MyHouses';
 import { AttachHouse, Entry } from './pages/Entry';
 import { InitiativeView, PollProgressPage } from './pages/initiative/InitiativeView';
 import { VotePage, SurveyPage, CountedPage } from './pages/poll/VoteFlow';
+import { DemandCreatePage, DemandPage, PathChoicePage } from './pages/demand/DemandFlow';
+import { MeetingCreatePage } from './pages/meeting/MeetingCreate';
 import { Meeting, Tracker, WalkList, Receive, EnterDecisions, ResultPreview, Result } from './pages/meeting/Meeting';
 import { UIKit } from './pages/UIKit';
 
@@ -35,6 +37,10 @@ export const applicationRoutes = [
   { path: '/initiatives/:id/vote', Component: VotePage },
   { path: '/initiatives/:id/survey', Component: SurveyPage },
   { path: '/initiatives/:id/counted', Component: CountedPage },
+  { path: '/initiatives/:id/path', Component: PathChoicePage },
+  { path: '/initiatives/:id/demand/new', Component: DemandCreatePage },
+  { path: '/demands/:id', Component: DemandPage },
+  { path: '/initiatives/:id/meeting/new', Component: MeetingCreatePage },
   { path: '/meetings/:id', Component: Meeting },
   { path: '/meetings/:id/tracker', Component: Tracker },
   { path: '/meetings/:id/walk', Component: WalkList },

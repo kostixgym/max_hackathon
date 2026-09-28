@@ -34,7 +34,7 @@ export function AgendaCard({ badge = true }: { badge?: boolean }) {
   return (
     <Card className="card" style={{ gap: 0 }}>
       <div className="between" style={{ paddingBottom: badge ? 6 : 8 }}>
-        <MaxTypography.Headline className="h3" variant="small">Повестка</MaxTypography.Headline>
+        <MaxTypography.Headline className="h3" variant="small">Вопросы собрания</MaxTypography.Headline>
         {badge && <Badge kind="calc" />}
       </div>
       {agenda.map((a, i) => (

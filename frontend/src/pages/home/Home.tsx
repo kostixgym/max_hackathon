@@ -1,22 +1,18 @@
 import { Typography as MaxTypography } from '@maxhub/max-ui';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Apt, Badge, Btn, Cell, DemoBadge, Foot, Kv, LinkBtn, Main, Note, Screen, Status, UiButton, type StatusKind, UiList, Card } from '../../components/ui';
+import { Apt, Badge, Btn, Cell, DemoBadge, Foot, Header, Kv, Main, Note, Screen, Status, UiButton, type StatusKind, UiList, Card } from '../../components/ui';
 import { fmtM2, fmtNum } from '../../lib/format';
 import { P } from '../../paths';
 import { useApi } from '../../hooks/useApi';
-import { fetchMe, fetchInitiatives, getStartParam, parseM2, formatShare } from '../../lib/api';
+import { fetchMe, fetchInitiatives, getStartParam, parseM2 } from '../../lib/api';
 
 function HomeHeader({ address, isDemo }: { address: string; isDemo: boolean }) {
+  const navigate = useNavigate();
   return (
-    <div className="col" style={{ gap: 2, padding: '16px 20px 8px' }}>
-      <div className="row">
-        <MaxTypography.Headline className="h2" style={{ flex: 1 }} variant="medium">
-          Мой дом
-        </MaxTypography.Headline>
-        {isDemo && <DemoBadge />}
-      </div>
-      <MaxTypography.Text className="cap" variant="detail" color="secondary">{address}</MaxTypography.Text>
-    </div>
+    <>
+      <Header title="Мой дом" onNav={() => navigate('/')} right={isDemo ? <DemoBadge /> : undefined} />
+      <div className="home-address"><MaxTypography.Text className="cap" variant="detail" color="secondary">{address}</MaxTypography.Text></div>
+    </>
   );
 }
 
@@ -65,8 +61,9 @@ export function Home() {
 
   // Берем первую подтвержденную привязку как owner
   const linkedSlug = searchParams.get('house') ?? me?.house?.slug ?? getStartParam();
-  const ownerMembership = me?.memberships.find((m) => m.status === 'verified' && m.role === 'owner' && (!linkedSlug || m.house.slug === linkedSlug))
-    ?? me?.memberships.find((m) => m.status === 'verified' && m.role === 'owner');
+  const selectedOwners = me?.memberships.filter((m) => m.status === 'verified' && m.role === 'owner' && (!linkedSlug || m.house.slug === linkedSlug)) ?? [];
+  const ownerMemberships = selectedOwners.length ? selectedOwners : (me?.memberships.filter((m) => m.status === 'verified' && m.role === 'owner') ?? []);
+  const ownerMembership = ownerMemberships[0];
   const house = ownerMembership?.house;
   const houseId = house?.id;
 
@@ -96,8 +93,9 @@ export function Home() {
     );
   }
 
-  const owner = ownerMembership.owner;
-  const premise = ownerMembership.premise;
+  const memberships = ownerMemberships.filter((m) => m.house.id === house.id);
+  const totalArea = memberships.reduce((sum, m) => sum + (parseM2(m.premise.display_area_m2) || 0), 0);
+  const totalWeight = memberships.reduce((sum, m) => sum + (parseM2(m.owner?.weight_m2 ?? null) || 0), 0);
   const initiatives = initiativesState.data?.initiatives || [];
   const activeInitiatives = initiatives.filter((i) => i.stage === 'draft' || i.stage === 'poll' || i.stage === 'demand' || i.stage === 'meeting');
   const archivedInitiatives = initiatives.filter((i) => i.stage === 'done' || i.stage === 'cancelled');
@@ -105,12 +103,12 @@ export function Home() {
     <Screen>
       <HomeHeader address={house.address} isDemo={house.is_demo} />
       <Main>
-        <Card className="card">
+        <Card className="card home-profile-card">
           <div className="row" style={{ gap: 12 }}>
             <span className="av">{me.user.first_name[0]}</span>
             <div className="grow">
               <MaxTypography.Headline className="h3" variant="small">
-                {me.user.first_name} · кв. {premise.number}
+                {me.user.first_name} · {memberships.length} {memberships.length === 1 ? 'квартира' : 'квартиры'}
               </MaxTypography.Headline>
               <div className="row">
                 <Status kind="ok">Собственник</Status>
@@ -119,29 +117,25 @@ export function Home() {
             </div>
           </div>
           <div className="hr" />
+          <Kv k="Квартиры">
+            <span className="row"><b>{memberships.map((m) => m.premise.number).join(', ')}</b></span>
+          </Kv>
           <Kv k="Площадь">
             <span className="row">
-              <b>{premise.display_area_m2 ? fmtM2(parseM2(premise.display_area_m2) || 0) : '—'}</b>
+              <b>{fmtM2(totalArea)}</b>
               <Badge kind="fact" />
             </span>
           </Kv>
-          {owner && (
+          {memberships.length > 0 && (
             <>
-              <Kv k="Доля">
-                <span className="row">
-                  <b>{formatShare(owner.share)}</b>
-                  <Badge kind="fact" />
-                </span>
-              </Kv>
               <Kv k="Вес голоса">
                 <span className="row">
-                  <b style={{ fontSize: 18 }}>{fmtM2(parseM2(owner.weight_m2) || 0)}</b>
+                  <b style={{ fontSize: 18 }}>{fmtM2(totalWeight)}</b>
                   <Badge kind="calc" />
                 </span>
               </Kv>
             </>
           )}
-          <LinkBtn>Данные неверны</LinkBtn>
         </Card>
 
         <div className="between" style={{ padding: '6px 4px 0' }}>
@@ -156,7 +150,7 @@ export function Home() {
             className="initiative-card"
             variant="secondary"
             onClick={() => navigate(`/initiatives/${init.id}`)}
-            style={{ gap: 10 }}
+            style={{ gap: 10, justifyContent: 'center' }}
           >
             <div className="between" style={{ alignItems: 'flex-start' }}>
               <MaxTypography.Headline className="h3" variant="small">{init.title}</MaxTypography.Headline>

@@ -112,11 +112,12 @@ export function LinkBtn({ children, icon, onClick, to, style }: { children: Reac
 
 export type BadgeKind = 'fact' | 'calc' | 'poll' | 'model';
 const badgeText: Record<BadgeKind, string> = { fact: 'Факт', calc: 'Расчёт', poll: 'Опрос — без юр. силы', model: 'Модельные данные' };
+const badgeDescription: Record<BadgeKind, string> = { fact: 'Данные из реестра дома', calc: 'Расчёт по площади и долям квартир', poll: 'Предварительный опрос без юридической силы', model: 'Демо-данные для примера' };
 
 /** Бейдж источника данных: факт / расчёт / опрос / модельные данные. */
 export function Badge({ kind, children, style }: { kind: BadgeKind; children?: ReactNode; style?: React.CSSProperties }) {
   return (
-    <MaxTypography.Label variant="medium-strong" className={'b b-' + kind} style={style}>
+    <MaxTypography.Label variant="medium-strong" className={'b b-' + kind} style={style} title={badgeDescription[kind]} aria-label={badgeDescription[kind]}>
       {children ?? badgeText[kind]}
     </MaxTypography.Label>
   );
