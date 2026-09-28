@@ -136,6 +136,9 @@
   "slug": "demo-house",
   "address": "г. Казань, ул. Демонстрационная, д. 1 (демо-дом)",
   "region": "Республика Татарстан",
+  "locality": "Казань",
+  "street": "Демонстрационная",
+  "house_number": "1",
   "is_demo": true,
   "premises_count": 61,
   "registry_version": 1,
@@ -148,7 +151,18 @@
 }
 ```
 
-Если дом не найден, возвращается `404 Not Found` с кодом ошибки `house_not_found`.
+## `GET /api/v1/houses?q={address}`
+
+Ищет дома по подстроке в адресе для отображения и компонентах `region`, `locality`, `street`,
+`house_number`, `building`, `structure`. Запрос требует не менее трёх символов; выдача ограничена
+20 домами, совпадения с началом отображаемого адреса идут первыми. Персональные данные не возвращаются.
+Фронтенд вызывает этот endpoint с debounce по мере ввода и требует выбрать один из результатов.
+Ответ сводки дополнительно может содержать `locality`, `street`, `house_number`, `building`,
+`structure`, `fias_id`; `address` остаётся готовой строкой для отображения. Поиск по ФИАС пока не подключён.
+
+**Response `200 OK`:** `{ "houses": [<сводка дома>] }`, формат элемента совпадает с ответом выше.
+
+Если совпадений нет, endpoint возвращает `200 OK` с пустым массивом `houses`.
 
 ## `GET /api/v1/premises/{premiseID}/owners`
 
@@ -251,28 +265,34 @@
 а наше приложение только помогает организовать процесс и показывает трекер. Отметка «проголосовал
 онлайн» не содержит варианта голоса и никогда не участвует в подсчёте результата.
 
-### `GET /api/v1/houses/{houseID}/premises?number={number}`
+### `POST /api/v1/houses/{slug}/memberships`
 
-Находит помещение по номеру, чтобы пользователь мог привязаться к квартире.
+Создаёт гостевую привязку текущего пользователя к помещению, если такой номер есть в реестре дома.
+Квартира выбирается по QR-ссылке (`slug`) или предварительно найдена поиском адреса.
 
-**Request body:** отсутствует.
+**Request body:** `{ "premise_number": "43" }`.
 
-**Response `200 OK`:** список `{id, number, kind, entrance, floor, display_area_m2}` без персональных данных собственников.
+**Response `201 Created`:** `{ "membership_id": "…", "role": "guest", "status": "pending", "next_step": "owner_verification" }`.
 
-### `POST /api/v1/memberships`
+### `POST /api/v1/memberships/{id}/verify/phone`
 
-Создаёт привязку текущего пользователя к выбранному помещению с ролью гостя.
+Проверяет контакт, который пользователь явно передал через нативный `WebApp.requestContact()`.
+Подпись `hash` проверяется bot token по `auth_date`, `phone` без ведущего `+` и ID пользователя MAX.
+Затем телефон хэшируется серверным `HMAC_SECRET` и ищется среди собственников текущей версии реестра
+у помещения из membership. Сырой телефон не сохраняется.
 
 **Request body:**
 
 ```json
 {
-  "house_id": "0199...",
-  "premise_id": "0199..."
+  "phone": "+7…",
+  "auth_date": "…",
+  "hash": "…"
 }
 ```
 
-**Response `201 Created`:** `{id, house_id, premise_id, role: "guest", status: "pending"}`.
+**Response `200 OK`:** `{ "membership_id": "…", "role": "owner", "status": "verified", "method": "phone" }`.
+Нет совпадения — `422 phone_not_matched`; отклонённая MAX подпись — `401 invalid_contact_proof`.
 
 ### `POST /api/v1/memberships/{id}/verify/demo`
 
@@ -1195,7 +1215,10 @@
 
 Подключает новый дом к УК.
 
-**Request body:** `{address, fias_id, region, timezone, passport_area_m2}`.
+**Request body:** `{address, fias_id, region, locality, street, house_number, building, structure, timezone, passport_area_m2}`.
+
+`address` — готовая строка для отображения; структурированные компоненты записываются отдельно.
+`fias_id` необязателен. Интеграция с ФИАС и этот HTTP-маршрут пока не реализованы.
 
 **Response `201 Created`:** `{id, org_id, address, invite_slug}`.
 

@@ -4,14 +4,20 @@ package httpapi
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"log/slog"
 	"math/big"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/registry"
 	"maxhackathon/backend/internal/rules"
 )
@@ -19,6 +25,16 @@ import (
 // Houses reads house data (the registry module).
 type Houses interface {
 	HouseBySlug(ctx context.Context, slug string) (registry.HouseSummary, error)
+}
+type HouseSearcher interface {
+	SearchHouses(ctx context.Context, query string) ([]registry.HouseSummary, error)
+}
+
+type GuestAttacher interface {
+	AttachGuest(ctx context.Context, userID, houseID, premiseNumber string) (string, error)
+}
+type PhoneOwnerVerifier interface {
+	ConfirmOwnerByPhone(ctx context.Context, userID, membershipID, phone string) (access.OwnerLink, error)
 }
 
 // Readiness checks whether a required dependency is available.
@@ -50,6 +66,8 @@ type Deps struct {
 	PollProgress     PollProgress
 	Votes            Voter
 	DemoMembers      DemoMembership
+	GuestAttacher    GuestAttacher
+	PhoneVerifier    PhoneOwnerVerifier
 
 	// Sprint to 30.09: the staff cabinet (К2), demands (Дима, Д1–Д5) and meetings
 	// (Гоша, Г2–Г7). The Demands and Meetings interfaces live in demands.go and
@@ -72,8 +90,9 @@ func NewHandler(d Deps) http.Handler {
 		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode,
 		access: d.Access, templates: d.Templates, initiatives: d.Initiatives,
 		initiativeReader: d.InitiativeReader, pollStarter: d.PollStarter,
-		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers,
-		orgs: d.Orgs, orgHouses: d.OrgHouses, demands: d.Demands, meetings: d.Meetings,
+		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers, guestAttacher: d.GuestAttacher, phoneVerifier: d.PhoneVerifier,
+		botToken: d.Auth.BotToken,
+		orgs:     d.Orgs, orgHouses: d.OrgHouses, demands: d.Demands, meetings: d.Meetings,
 	}
 
 	// Application logs are emitted through slog; Gin's debug route dump would
@@ -97,6 +116,9 @@ func NewHandler(d Deps) http.Handler {
 	protected.Use(d.Auth.Middleware())
 	protected.GET("/me", h.me)
 	protected.GET("/houses/:house", h.house)
+	protected.GET("/houses", h.searchHouses)
+	protected.POST("/houses/:house/memberships", h.attachGuest)
+	protected.POST("/memberships/:id/verify/phone", h.verifyOwnerPhone)
 	protected.GET("/premises/:premiseID/owners", h.premiseOwners)
 	protected.GET("/houses/:house/meeting-officer-candidates", h.meetingOfficerCandidates)
 
@@ -169,6 +191,9 @@ type handlers struct {
 	pollProgress     PollProgress
 	votes            Voter
 	demoMembers      DemoMembership
+	guestAttacher    GuestAttacher
+	phoneVerifier    PhoneOwnerVerifier
+	botToken         string
 
 	// Sprint to 30.09.
 	orgs      Orgs
@@ -288,6 +313,129 @@ func (h *handlers) house(c *gin.Context) {
 	writeJSON(c, http.StatusOK, toHouseJSON(house))
 }
 
+func (h *handlers) searchHouses(c *gin.Context) {
+	query := strings.TrimSpace(c.Query("q"))
+	if len([]rune(query)) < 3 {
+		writeError(c, http.StatusBadRequest, "query_too_short", "Введите не менее трёх символов адреса")
+		return
+	}
+	searcher, ok := h.houses.(HouseSearcher)
+	if !ok {
+		writeError(c, http.StatusNotImplemented, "not_implemented", "Поиск домов пока недоступен")
+		return
+	}
+	houses, err := searcher.SearchHouses(c.Request.Context(), query)
+	if err != nil {
+		h.log.Error("search houses", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось найти дом")
+		return
+	}
+	result := make([]houseJSON, 0, len(houses))
+	for _, house := range houses {
+		result = append(result, toHouseJSON(house))
+	}
+	writeJSON(c, http.StatusOK, gin.H{"houses": result})
+}
+
+func (h *handlers) attachGuest(c *gin.Context) {
+	if h.guestAttacher == nil {
+		writeError(c, http.StatusNotImplemented, "not_implemented", "Прикрепление пока недоступно")
+		return
+	}
+	identity, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка")
+		return
+	}
+	house, err := h.houses.HouseBySlug(c.Request.Context(), c.Param("house"))
+	if errors.Is(err, registry.ErrNotFound) {
+		writeError(c, http.StatusNotFound, "house_not_found", "Дом не найден")
+		return
+	}
+	if err != nil {
+		h.log.Error("load house for guest attachment", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить дом")
+		return
+	}
+	var body struct {
+		PremiseNumber string `json:"premise_number" binding:"required,max=32"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "Укажите номер квартиры")
+		return
+	}
+	id, err := h.guestAttacher.AttachGuest(c.Request.Context(), identity.UserID, house.ID, strings.TrimSpace(body.PremiseNumber))
+	switch {
+	case errors.Is(err, access.ErrNotFound), errors.Is(err, registry.ErrNotFound):
+		writeError(c, http.StatusNotFound, "premise_not_found", "Квартира не найдена. Проверьте номер")
+	case err != nil:
+		h.log.Error("attach guest", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось прикрепить квартиру")
+	default:
+		writeJSON(c, http.StatusCreated, gin.H{"membership_id": id, "role": "guest", "status": "pending", "next_step": "owner_verification"})
+	}
+}
+
+func (h *handlers) verifyOwnerPhone(c *gin.Context) {
+	if h.phoneVerifier == nil || h.botToken == "" {
+		writeError(c, http.StatusNotImplemented, "not_implemented", "Проверка контакта MAX пока недоступна")
+		return
+	}
+	identity, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка")
+		return
+	}
+	var body struct {
+		Phone    string `json:"phone" binding:"required,max=32"`
+		AuthDate string `json:"auth_date" binding:"required,max=32"`
+		Hash     string `json:"hash" binding:"required,len=64"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		writeError(c, http.StatusBadRequest, "invalid_request", "Не удалось прочитать подтверждённый контакт MAX")
+		return
+	}
+	if !validContactProof(h.botToken, identity.MaxUserID, body.Phone, body.AuthDate, body.Hash, time.Now()) {
+		writeError(c, http.StatusUnauthorized, "invalid_contact_proof", "MAX не подтвердил номер телефона. Запросите контакт ещё раз")
+		return
+	}
+	link, err := h.phoneVerifier.ConfirmOwnerByPhone(c.Request.Context(), identity.UserID, c.Param("id"), body.Phone)
+	switch {
+	case errors.Is(err, access.ErrNotFound):
+		writeError(c, http.StatusNotFound, "membership_not_found", "Заявка не найдена или уже обработана")
+	case errors.Is(err, access.ErrPhoneNotMatched):
+		writeError(c, http.StatusUnprocessableEntity, "phone_not_matched", "Этот номер MAX не совпал с номером собственника в реестре")
+	case errors.Is(err, access.ErrOwnerTaken):
+		writeError(c, http.StatusConflict, "owner_taken", "Эта запись собственника уже подтверждена в другом профиле")
+	case err != nil:
+		h.log.Error("verify owner phone", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось проверить собственника")
+	default:
+		writeJSON(c, http.StatusOK, gin.H{"membership_id": link.MembershipID, "role": "owner", "status": "verified", "method": "phone"})
+	}
+}
+
+func validContactProof(botToken string, maxUserID int64, phone, authDate, supplied string, now time.Time) bool {
+	seconds, err := strconv.ParseInt(authDate, 10, 64)
+	if err != nil {
+		return false
+	}
+	// MAX timestamps are Unix seconds; accept milliseconds defensively if returned by a client version.
+	if seconds > 1_000_000_000_000 {
+		seconds /= 1000
+	}
+	issued := time.Unix(seconds, 0)
+	if now.Sub(issued) > 10*time.Minute || issued.Sub(now) > maxClockSkew {
+		return false
+	}
+	phoneForProof := strings.TrimPrefix(phone, "+")
+	message := "authDate=" + authDate + "\nphone=" + phoneForProof + "\nuserId=" + strconv.FormatInt(maxUserID, 10)
+	mac := hmac.New(sha256.New, []byte(botToken))
+	_, _ = mac.Write([]byte(message))
+	got, err := hex.DecodeString(supplied)
+	return err == nil && hmac.Equal(got, mac.Sum(nil))
+}
+
 // houseJSON: areas are decimal strings in м² with a dot ("3000.00"): exact values
 // travel as text, the mini-app formats them for display.
 type houseJSON struct {
@@ -295,6 +443,12 @@ type houseJSON struct {
 	Slug            string          `json:"slug"`
 	Address         string          `json:"address"`
 	Region          string          `json:"region"`
+	Locality        string          `json:"locality,omitempty"`
+	Street          string          `json:"street,omitempty"`
+	HouseNumber     string          `json:"house_number,omitempty"`
+	Building        string          `json:"building,omitempty"`
+	Structure       string          `json:"structure,omitempty"`
+	FIASID          string          `json:"fias_id,omitempty"`
 	IsDemo          bool            `json:"is_demo"`
 	PremisesCount   int             `json:"premises_count"`
 	RegistryVersion *int            `json:"registry_version"`
@@ -314,6 +468,12 @@ func toHouseJSON(h registry.HouseSummary) houseJSON {
 		Slug:            h.InviteSlug,
 		Address:         h.Address,
 		Region:          h.Region,
+		Locality:        h.Locality,
+		Street:          h.Street,
+		HouseNumber:     h.HouseNumber,
+		Building:        h.Building,
+		Structure:       h.Structure,
+		FIASID:          h.FIASID,
 		IsDemo:          h.IsDemo,
 		PremisesCount:   h.PremisesCount,
 		RegistryVersion: h.RegistryVersion,

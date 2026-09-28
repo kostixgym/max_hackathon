@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
 	"maxhackathon/backend/internal/initiatives"
@@ -180,6 +181,55 @@ var ErrNotDemo = errors.New("house is not a demo house")
 // ErrOwnerTaken means the owner record is already confirmed for another account
 // (инвариант 9): the conflict is for the management company to resolve.
 var ErrOwnerTaken = errors.New("owner is already confirmed for another account")
+var ErrPhoneNotMatched = errors.New("MAX phone does not match an owner of this premise")
+
+// ConfirmOwnerByPhone promotes only this user's pending guest link, and only if
+// the verified MAX contact matches a phone in the current registry snapshot.
+func (s *Store) ConfirmOwnerByPhone(ctx context.Context, userID, membershipID, phone string) (OwnerLink, error) {
+	if s.hasher == nil {
+		return OwnerLink{}, errors.New("phone hasher is not configured")
+	}
+	phoneHash, err := s.hasher.Phone(phone)
+	if err != nil {
+		return OwnerLink{}, err
+	}
+	var premiseID, number string
+	err = s.pool.QueryRow(ctx, `
+		SELECT p.id::text, p.number
+		FROM memberships m JOIN premises p ON p.id = m.premise_id
+		WHERE m.id = $1::uuid AND m.user_id = $2::uuid AND m.role = 'guest' AND m.status = 'pending'`, membershipID, userID).Scan(&premiseID, &number)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return OwnerLink{}, ErrNotFound
+	}
+	if err != nil {
+		return OwnerLink{}, fmt.Errorf("load membership for phone verification: %w", err)
+	}
+	phoneRegistry, ok := s.registry.(interface {
+		OwnerByPhoneHash(context.Context, string, []byte) (registry.Owner, error)
+	})
+	if !ok {
+		return OwnerLink{}, errors.New("registry phone lookup is not configured")
+	}
+	owner, err := phoneRegistry.OwnerByPhoneHash(ctx, premiseID, phoneHash)
+	if errors.Is(err, registry.ErrNotFound) {
+		return OwnerLink{}, ErrPhoneNotMatched
+	}
+	if err != nil {
+		return OwnerLink{}, err
+	}
+	link := OwnerLink{PremiseID: premiseID, OwnerID: owner.ID, PremiseNumber: number}
+	err = s.pool.QueryRow(ctx, `
+		UPDATE memberships SET owner_id = $3::uuid, role = 'owner', method = 'phone', status = 'verified', verified_at = now()
+		WHERE id = $1::uuid AND user_id = $2::uuid AND role = 'guest' AND status = 'pending'
+		RETURNING id::text`, membershipID, userID, owner.ID).Scan(&link.MembershipID)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return OwnerLink{}, fmt.Errorf("%w: owner %s", ErrOwnerTaken, owner.ID)
+		}
+		return OwnerLink{}, fmt.Errorf("confirm owner by phone: %w", err)
+	}
+	return link, nil
+}
 
 // ConfirmDemoOwner links the user to an owner of the premise in the current
 // registry version (docs/01, «Как это проверит жюри»: auto-confirmation in the

@@ -138,6 +138,24 @@ func (s *Store) PremiseOwners(ctx context.Context, premiseID string) ([]Owner, e
 		ORDER BY r.full_name, o.id`, premiseID)
 }
 
+// OwnerByPhoneHash returns the current registry owner of a premise whose phone
+// HMAC matches a verified MAX contact. The raw phone number never enters registry.
+func (s *Store) OwnerByPhoneHash(ctx context.Context, premiseID string, phoneHash []byte) (Owner, error) {
+	var owner Owner
+	err := s.pool.QueryRow(ctx, currentOwners+`
+		WHERE p.id = $1::uuid AND r.phone_hmac = $2
+		ORDER BY o.id
+	LIMIT 1`, premiseID, phoneHash).Scan(&owner.ID, &owner.PremiseID, &owner.PremiseNumber,
+		&owner.FullName, &owner.Kind, &owner.ShareNum, &owner.ShareDen, &owner.WeightNum, &owner.WeightDen)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Owner{}, ErrNotFound
+	}
+	if err != nil {
+		return Owner{}, fmt.Errorf("owner by phone hash: %w", err)
+	}
+	return owner, nil
+}
+
 // HouseOwners returns the current owners of all premises of a house.
 func (s *Store) HouseOwners(ctx context.Context, houseID string) ([]Owner, error) {
 	return s.owners(ctx, currentOwners+`

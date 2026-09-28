@@ -71,8 +71,8 @@ func seedDemo(ctx context.Context, tx pgx.Tx, hasher *security.Hasher, slug stri
 		return err
 	}
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO houses (org_id, address, region, timezone, passport_area_centi, invite_slug, is_demo)
-		VALUES ($1, $2, $3, 'Europe/Moscow', $4, $5, true) RETURNING id::text`,
+		INSERT INTO houses (org_id, address, region, locality, street, house_number, timezone, passport_area_centi, invite_slug, is_demo)
+		VALUES ($1, $2, $3, 'Казань', 'Демонстрационная', '1', 'Europe/Moscow', $4, $5, true) RETURNING id::text`,
 		orgID, demoAddress, demoRegion, DemoTotalAreaCenti(premises), slug,
 	).Scan(&houseID); err != nil {
 		return err
