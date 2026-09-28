@@ -94,7 +94,7 @@ func ProtocolPDF(data ProtocolPDFData) ([]byte, error) {
 		data.Form, data.NoticeDate, data.VotingStart, data.VotingEnd,
 		data.ChairName, data.ChairPremise,
 		data.SecretaryName, data.SecretaryPrem,
-		data.TotalM2, data.QuorumText), "", "L", false)
+		data.TotalM2, data.ParticipantsM2, data.QuorumText), "", "L", false)
 	pdf.Ln(4)
 
 	// Решения по вопросам
