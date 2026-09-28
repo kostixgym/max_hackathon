@@ -21,8 +21,24 @@ import (
 type Demands interface {
 	Create(ctx context.Context, initiativeID, byUserID, channel string) (demand.Demand, error)
 	Get(ctx context.Context, demandID, viewerID string) (demand.Demand, error)
+	GetByInitiative(ctx context.Context, initiativeID, viewerID string) (demand.Demand, error)
+	ListByHouses(ctx context.Context, houseIDs []string) ([]demand.Demand, error)
 	MarkDelivered(ctx context.Context, demandID, byUserID string, deliveredAt time.Time) (demand.Demand, error)
 	PDF(ctx context.Context, demandID, viewerID string) ([]byte, error)
+}
+
+func (h *handlers) getInitiativeDemand(c *gin.Context) {
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+		return
+	}
+
+	d, err := h.demands.GetByInitiative(c.Request.Context(), c.Param("id"), id.UserID)
+	mapDemandErr(c, h.log, err, "Не удалось загрузить требование, попробуйте ещё раз")
+	if err == nil {
+		writeJSON(c, http.StatusOK, toDemandJSON(d))
+	}
 }
 
 func (h *handlers) createDemand(c *gin.Context) {

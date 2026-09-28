@@ -304,6 +304,19 @@ func (s *Service) Get(ctx context.Context, demandID, viewerID string) (Demand, e
 	return d, nil
 }
 
+// GetByInitiative resolves the demand from its initiative and keeps the same access check as Get.
+func (s *Service) GetByInitiative(ctx context.Context, initiativeID, viewerID string) (Demand, error) {
+	var demandID string
+	err := s.pool.QueryRow(ctx, `SELECT id::text FROM demands WHERE initiative_id = $1::uuid`, initiativeID).Scan(&demandID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Demand{}, ErrNotFound
+	}
+	if err != nil {
+		return Demand{}, fmt.Errorf("find initiative demand: %w", err)
+	}
+	return s.Get(ctx, demandID, viewerID)
+}
+
 // MarkDelivered records that the demand was handed to the company: the 45-day
 // term starts (ст. 45 ч. 6 ЖК). Initiator only; once.
 func (s *Service) MarkDelivered(ctx context.Context, demandID, byUserID string, deliveredAt time.Time) (Demand, error) {

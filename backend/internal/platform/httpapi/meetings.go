@@ -21,6 +21,7 @@ import (
 // Meetings is the meeting module (nil keeps the routes at 501).
 type Meetings interface {
 	Create(ctx context.Context, in meeting.CreateInput) (meeting.View, error)
+	ActiveMeeting(ctx context.Context, initiativeID string) (meeting.Ref, bool, error)
 	Get(ctx context.Context, meetingID, viewerID string) (meeting.View, error)
 	Tracker(ctx context.Context, meetingID, viewerID string) (meeting.Tracker, error)
 	ReceiveBallot(ctx context.Context, meetingID, ballotID, byUserID string) (meeting.ReceivedBallot, error)
@@ -30,6 +31,33 @@ type Meetings interface {
 	Finalize(ctx context.Context, meetingID, byUserID string) (meeting.Final, error)
 	FinishVoting(ctx context.Context, meetingID, byUserID string) (meeting.View, error)
 	FillBallots(ctx context.Context, meetingID, byUserID string) (meeting.View, error)
+}
+
+func (h *handlers) getInitiativeMeeting(c *gin.Context) {
+	if h.meetings == nil {
+		notImplemented(c, "Собрания временно недоступны")
+		return
+	}
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+		return
+	}
+	ref, found, err := h.meetings.ActiveMeeting(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		h.writeMeetingError(c, err, "find initiative meeting")
+		return
+	}
+	if !found {
+		writeError(c, http.StatusNotFound, "meeting_not_found", "Собрание не найдено")
+		return
+	}
+	view, err := h.meetings.Get(c.Request.Context(), ref.ID, id.UserID)
+	if err != nil {
+		h.writeMeetingError(c, err, "read initiative meeting")
+		return
+	}
+	writeJSON(c, http.StatusOK, toMeetingJSON(view))
 }
 
 func (h *handlers) createMeeting(c *gin.Context) {

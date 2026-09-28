@@ -7,6 +7,8 @@ package rules
 
 // TemplateVideoSurveillance is the code of the «Видеонаблюдение» template (docs/API_DESCRIPTION.md).
 const TemplateVideoSurveillance = "video_surveillance"
+const TemplateIntercom = "intercom_upgrade"
+const TemplateCourtyardLighting = "courtyard_lighting"
 
 type decisionTypeDef struct {
 	Code, Name, Rule, LegalReference string
@@ -45,7 +47,23 @@ type templateDef struct {
 	Items        []CatalogItem
 }
 
-var templates = []templateDef{videoSurveillance}
+var templates = []templateDef{videoSurveillance, intercomUpgrade, courtyardLighting}
+
+var intercomUpgrade = templateDef{
+	Code: TemplateIntercom, Version: 1, Name: "Новый домофон",
+	Description: "Замена домофона и настройка доступа в подъезд.",
+	ParamsSchema: `{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["entrances","payment_method"],"properties":{"entrances":{"type":"integer","title":"Количество подъездов","minimum":1,"maximum":100},"payment_method":{"type":"string","title":"Способ оплаты","enum":["management_bill","special_assessment"]}}}`,
+	UISchema: `{"order":["entrances","payment_method"],"widgets":{"payment_method":"select"},"enum_titles":{"payment_method":{"management_bill":"Строкой в квитанции УК","special_assessment":"Разовым целевым сбором"}}}`,
+	Items: []CatalogItem{{Position: 1, Text: "Заменить домофонное оборудование в подъездах дома и утвердить порядок оплаты", DecisionCode: "common_property_use"}},
+}
+
+var courtyardLighting = templateDef{
+	Code: TemplateCourtyardLighting, Version: 1, Name: "Освещение двора",
+	Description: "Установка энергоэффективных светильников во дворе дома.",
+	ParamsSchema: `{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,"required":["fixture_count","estimated_cost_rub"],"properties":{"fixture_count":{"type":"integer","title":"Количество светильников","minimum":1,"maximum":1000},"estimated_cost_rub":{"type":"integer","title":"Ориентир по стоимости, ₽","minimum":0,"maximum":100000000}}}`,
+	UISchema: `{"order":["fixture_count","estimated_cost_rub"]}`,
+	Items: []CatalogItem{{Position: 1, Text: "Установить светильники во дворе дома по проекту, приложенному к материалам собрания", DecisionCode: "common_property_use"}},
+}
 
 // videoSurveillance is the «Видеонаблюдение» template (docs/02, шаг 1): where the
 // cameras go, how many, the estimated cost, how it is paid and who sees the records.

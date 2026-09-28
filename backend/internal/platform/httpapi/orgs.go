@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"maxhackathon/backend/internal/access"
+	"maxhackathon/backend/internal/demand"
 	"maxhackathon/backend/internal/registry"
 )
 
@@ -107,15 +108,85 @@ func (h *handlers) orgHousesList(c *gin.Context) {
 
 	list := make([]orgHouseJSON, 0, len(houses))
 	for _, house := range houses {
-		list = append(list, orgHouseJSON{ID: house.ID, Address: house.Address, Region: house.Region, IsDemo: house.IsDemo})
+		list = append(list, orgHouseJSON{ID: house.ID, Slug: house.InviteSlug, Address: house.Address, Region: house.Region, IsDemo: house.IsDemo})
 	}
 	writeJSON(c, http.StatusOK, gin.H{"houses": list})
 }
 
-// orgDemands waits for Дима's demand module (Д1, demand.ListByHouses). In the demo
-// house it lists only the demands of the caller's own initiatives (решение 79).
 func (h *handlers) orgDemands(c *gin.Context) {
-	notImplemented(c, "Требования появятся вместе с модулем требования")
+	if !h.orgsWired(c) {
+		return
+	}
+	if h.demands == nil {
+		writeError(c, http.StatusServiceUnavailable, "not_ready", "Требования временно недоступны")
+		return
+	}
+	id, ok := IdentityFrom(c)
+	if !ok {
+		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
+		return
+	}
+	orgID := c.Param("orgID")
+	if !validOrgID(orgID) {
+		writeError(c, http.StatusNotFound, "org_not_found", "Организация не найдена")
+		return
+	}
+	if _, err := h.orgs.OrgByUser(c.Request.Context(), id.UserID, orgID); err != nil {
+		if errors.Is(err, access.ErrForbidden) {
+			writeError(c, http.StatusForbidden, "not_staff", "Это кабинет другой организации")
+			return
+		}
+		if errors.Is(err, access.ErrNotFound) {
+			writeError(c, http.StatusNotFound, "org_not_found", "Организация не найдена")
+			return
+		}
+		h.log.Error("check org for demands", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить требования")
+		return
+	}
+	houses, err := h.orgHouses.HousesByOrg(c.Request.Context(), orgID)
+	if err != nil {
+		h.log.Error("houses for demands", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить требования")
+		return
+	}
+	houseIDs := make([]string, 0, len(houses))
+	houseNames := make(map[string]string, len(houses))
+	for _, house := range houses {
+		houseIDs = append(houseIDs, house.ID)
+		houseNames[house.ID] = house.Address
+	}
+	demands, err := h.demands.ListByHouses(c.Request.Context(), houseIDs)
+	if err != nil {
+		h.log.Error("list org demands", "err", err)
+		writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить требования")
+		return
+	}
+	list := make([]gin.H, 0, len(demands))
+	for _, item := range demands {
+		visible, err := h.demands.Get(c.Request.Context(), item.ID, id.UserID)
+		if errors.Is(err, demand.ErrForbidden) {
+			continue
+		}
+		if err != nil {
+			h.log.Error("read org demand", "err", err)
+			writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить требования")
+			return
+		}
+		row := toDemandJSON(visible)
+		initiative, err := h.initiativeReader.Details(c.Request.Context(), visible.InitiativeID)
+		if err != nil {
+			h.log.Error("read org demand initiative", "err", err)
+			writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить требования")
+			return
+		}
+		row["initiative_title"] = initiative.Title
+		row["house"] = gin.H{"id": visible.HouseID, "address": houseNames[visible.HouseID]}
+		row["house_id"] = visible.HouseID
+		row["house_address"] = houseNames[visible.HouseID]
+		list = append(list, row)
+	}
+	writeJSON(c, http.StatusOK, gin.H{"demands": list})
 }
 
 func (h *handlers) demoStaff(c *gin.Context) {
@@ -172,6 +243,7 @@ type orgJSON struct {
 
 type orgHouseJSON struct {
 	ID      string `json:"id"`
+	Slug    string `json:"slug"`
 	Address string `json:"address"`
 	Region  string `json:"region"`
 	IsDemo  bool   `json:"is_demo"`

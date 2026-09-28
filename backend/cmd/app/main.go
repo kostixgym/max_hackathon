@@ -109,6 +109,9 @@ func run() error {
 		}
 		// The invite link is public by design (it hangs on the entrance door), logging it is fine.
 		log.Info("demo house ready", "invite_slug", slug)
+		if err := houses.SeedSampleHouses(ctx, hasher); err != nil {
+			return err
+		}
 	}
 
 	handler := httpapi.NewHandler(httpapi.Deps{
