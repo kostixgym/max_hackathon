@@ -27,7 +27,7 @@ func (s *Store) IsSystemAdmin(ctx context.Context, userID string) (bool, error) 
 
 func (s *Store) IsSystemAdminByMaxID(ctx context.Context, maxID int64) (bool, error) {
 	var ok bool
-	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM system_admins a JOIN users u ON u.id=a.user_id WHERE u.max_user_id=$1 AND u.deleted_at IS NULL)`, maxID).Scan(&ok)
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM system_admins a JOIN users u ON u.id=a.user_id WHERE u.max_user_id=$1)`, maxID).Scan(&ok)
 	return ok, err
 }
 
@@ -37,7 +37,7 @@ func (s *Store) SearchKnownUsers(ctx context.Context, query string) ([]ManagedUs
 	if query == "" || strings.Trim(query, "0123456789") != "" {
 		return []ManagedUser{}, nil
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id::text, max_user_id FROM users WHERE deleted_at IS NULL AND max_user_id::text LIKE $1 ORDER BY max_user_id LIMIT 50`, "%"+query+"%")
+	rows, err := s.pool.Query(ctx, `SELECT id::text, max_user_id FROM users WHERE max_user_id::text LIKE $1 ORDER BY max_user_id LIMIT 50`, "%"+query+"%")
 	if err != nil {
 		return nil, fmt.Errorf("search known users: %w", err)
 	}
@@ -82,7 +82,7 @@ func (s *Store) SetOrgStaff(ctx context.Context, maxUserID int64, orgID, role st
 		return ErrNotFound
 	}
 	var userID string
-	if err := s.pool.QueryRow(ctx, `SELECT id::text FROM users WHERE max_user_id=$1 AND deleted_at IS NULL`, maxUserID).Scan(&userID); err != nil {
+	if err := s.pool.QueryRow(ctx, `SELECT id::text FROM users WHERE max_user_id=$1`, maxUserID).Scan(&userID); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
