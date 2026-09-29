@@ -1,7 +1,6 @@
 package config
 
 import (
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -39,17 +38,12 @@ func TestQuietHours(t *testing.T) {
 	}
 }
 
-func TestUKMaxUserIDs(t *testing.T) {
+func TestLegacyUKMaxUserIDsIgnored(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://localhost/app")
 	t.Setenv("HMAC_SECRET", strings.Repeat("s", 32))
 	t.Setenv("DEV_MODE", "true")
-	t.Setenv("UK_MAX_USER_IDS", "42, 43,42")
-	cfg, err := Load()
-	if err != nil || !cfg.UKMaxUserIDsConfigured || !reflect.DeepEqual(cfg.UKMaxUserIDs, []int64{42, 43}) {
-		t.Fatalf("UK IDs = %v, configured = %v, err = %v", cfg.UKMaxUserIDs, cfg.UKMaxUserIDsConfigured, err)
-	}
-	t.Setenv("UK_MAX_USER_IDS", "42,abc")
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "UK_MAX_USER_IDS") {
-		t.Fatalf("invalid list: %v", err)
+	t.Setenv("UK_MAX_USER_IDS", "42,not-a-number")
+	if _, err := Load(); err != nil {
+		t.Fatalf("legacy variable should be ignored: %v", err)
 	}
 }

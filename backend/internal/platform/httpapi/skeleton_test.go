@@ -21,9 +21,7 @@ import (
 const orgUUID = "00000000-0000-7000-8000-000000000001"
 
 type fakeOrgs struct {
-	orgs    []access.OrgSummary
-	demo    access.OrgSummary
-	demoErr error
+	orgs []access.OrgSummary
 }
 
 func (f fakeOrgs) OrgsByUser(_ context.Context, _ string) ([]access.OrgSummary, error) {
@@ -38,14 +36,6 @@ func (f fakeOrgs) OrgByUser(_ context.Context, userID, orgID string) (access.Org
 	}
 
 	return access.OrgSummary{}, access.ErrForbidden
-}
-
-func (f fakeOrgs) ConfirmDemoStaff(context.Context, string, string) (access.OrgSummary, error) {
-	if f.demoErr != nil {
-		return access.OrgSummary{}, f.demoErr
-	}
-
-	return f.demo, nil
 }
 
 type fakeOrgHouses struct{ houses []registry.HouseRef }
@@ -141,18 +131,9 @@ func TestOrgsEndpoints(t *testing.T) {
 		t.Fatalf("foreign org: status = %d", rec.Code)
 	}
 
-	// demo-staff: a working shortcut.
-	demo := fakeOrgs{demo: access.OrgSummary{ID: orgUUID, Name: "ООО «Демо-УК»", Type: "uk", Role: "operator"}}
-	h = newSkeletonServer(demo)
+	// Self-granting demo staff access has been removed.
 	rec = callJSON(h, http.MethodPost, "/api/v1/houses/demo-slug/demo-staff", "")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("demo staff: status = %d, body = %s", rec.Code, rec.Body)
-	}
-
-	notDemo := fakeOrgs{demoErr: access.ErrNotDemo}
-	h = newSkeletonServer(notDemo)
-	rec = callJSON(h, http.MethodPost, "/api/v1/houses/demo-slug/demo-staff", "")
-	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "not_demo") {
-		t.Fatalf("not demo: status = %d, body = %s", rec.Code, rec.Body)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("removed demo staff route: status = %d", rec.Code)
 	}
 }

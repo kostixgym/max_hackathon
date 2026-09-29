@@ -186,7 +186,6 @@ export function Home() {
         <Btn icon="plus" to={`${P.templates}?house=${encodeURIComponent(house.slug)}`}>
           Новая инициатива
         </Btn>
-        {me.orgs?.length > 0 && <Btn kind="text" to="/uk">Кабинет УК</Btn>}
       </Foot>
     </Screen>
   );

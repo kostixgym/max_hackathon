@@ -76,12 +76,10 @@ type OwnerSummary struct {
 
 // Store reads and writes the tables of the module: users, memberships and org_members.
 type Store struct {
-	pool            *pgxpool.Pool
-	registry        Registry
-	initiatives     Initiatives
-	hasher          *security.Hasher
-	ukIDs           map[int64]struct{}
-	ukIDsConfigured bool
+	pool        *pgxpool.Pool
+	registry    Registry
+	initiatives Initiatives
+	hasher      *security.Hasher
 }
 
 // NewStore creates an access store on top of the registry and initiatives modules.

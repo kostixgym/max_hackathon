@@ -173,7 +173,7 @@ export interface Membership {
 export interface MeResponse {
   user: MeUser;
   dev_mode: boolean;
-  uk_ids_configured: boolean;
+  is_admin: boolean;
   house: HouseJSON | null; // present if opened via house invite link
   memberships: Membership[];
   orgs: Org[];
@@ -202,8 +202,15 @@ export async function fetchOrgHouses(orgId: string): Promise<{ houses: OrgHouse[
   return request(`/orgs/${encodeURIComponent(orgId)}/houses`);
 }
 
-export async function becomeDemoStaff(houseSlug: string): Promise<{ org: Org; role: string }> {
-  return request(`/houses/${encodeURIComponent(houseSlug)}/demo-staff`, { method: 'POST', body: '{}' });
+export interface AdminUser { max_user_id: string }
+export async function searchAdminUsers(query: string): Promise<{ users: AdminUser[] }> {
+  return request(`/admin/users?q=${encodeURIComponent(query)}`);
+}
+export async function fetchAdminOrgs(): Promise<{ orgs: Org[] }> {
+  return request('/admin/organizations');
+}
+export async function setOrgStaff(maxUserId: string, orgId: string, role: 'operator' | 'admin', action: 'grant' | 'revoke'): Promise<void> {
+  await request('/admin/org-staff', { method: 'PUT', body: JSON.stringify({ max_user_id: maxUserId, org_id: orgId, role, action }) });
 }
 
 export interface OwnersResponse {

@@ -18,6 +18,7 @@ import { DemandCreatePage, DemandPage, PathChoicePage } from './pages/demand/Dem
 import { MeetingCreatePage } from './pages/meeting/MeetingCreate';
 import { Meeting, Tracker, WalkList, Receive, EnterDecisions, ResultPreview, Result } from './pages/meeting/Meeting';
 import { UIKit } from './pages/UIKit';
+import { AdminPanel } from './pages/Admin';
 
 export type ScreenRoute = { path: string; title: string; Component: ComponentType };
 export type ScreenGroup = { title: string; screens: ScreenRoute[] };
@@ -52,6 +53,7 @@ export const applicationRoutes = [
   { path: '/uk/demands', Component: UkDemands },
   { path: '/uk/meeting/new', Component: UkCreateMeeting },
   { path: '/uk/requests', Component: UkRequests },
+  { path: '/admin', Component: AdminPanel },
 ];
 
 // Экраны в порядке артбордов дизайна «ОСС в MAX — мини-приложение».

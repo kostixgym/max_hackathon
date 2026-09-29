@@ -40,11 +40,7 @@ type Config struct {
 	// DemoInviteSlug is the invite slug of the demo house. Empty value makes the
 	// seed generate a random one and print it to the log.
 	DemoInviteSlug string
-	// UKMaxUserIDs grants the demo management organization to these MAX accounts.
-	UKMaxUserIDs           []int64
-	UKMaxUserIDsConfigured bool
-
-	LogLevel string
+	LogLevel       string
 }
 
 // Load reads configuration from the environment and validates it.
@@ -82,22 +78,6 @@ func Load() (Config, error) {
 			}
 		}
 	}
-	rawUKIDs, ukConfigured := os.LookupEnv("UK_MAX_USER_IDS")
-	c.UKMaxUserIDsConfigured = ukConfigured
-	if raw := strings.TrimSpace(rawUKIDs); raw != "" {
-		seen := make(map[int64]bool)
-		for _, part := range strings.Split(raw, ",") {
-			id, parseErr := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
-			if parseErr != nil || id <= 0 {
-				return c, fmt.Errorf("UK_MAX_USER_IDS: expected comma-separated positive MAX user ids")
-			}
-			if !seen[id] {
-				c.UKMaxUserIDs = append(c.UKMaxUserIDs, id)
-				seen[id] = true
-			}
-		}
-	}
-
 	var errs []error
 	if c.DatabaseURL == "" {
 		errs = append(errs, errors.New("DATABASE_URL is required"))

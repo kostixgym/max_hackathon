@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button as MaxButton, CellAction as MaxCellAction, Typography, Typography as MaxTypography } from '@maxhub/max-ui';
 import { Apt, Btn, Cell, DemoBadge, Foot, Main, Note, Screen, Status, UiAvatar, UiInput, UiList, Card } from '../components/ui';
 import { useApi } from '../hooks/useApi';
-import { attachGuest, becomeDemoStaff, confirmDemoMembership, fetchMe, fetchOwnerClaimCandidates, getDisplayUser, searchHouses, submitOwnerClaim, verifyMembershipPhone, type HouseJSON, type MeResponse, type Owner } from '../lib/api';
+import { attachGuest, confirmDemoMembership, fetchMe, fetchOwnerClaimCandidates, getDisplayUser, searchHouses, submitOwnerClaim, verifyMembershipPhone, type HouseJSON, type MeResponse, type Owner } from '../lib/api';
 import { fmtM2Str } from '../lib/format';
 
 function HouseCard({ house, memberships, onOpen }: {
@@ -227,20 +227,6 @@ export function AttachHouse() {
     finally { setSubmitting(false); }
   };
 
-  const joinDemoStaff = async () => {
-    if (!house || submitting) return;
-    setSubmitting(true);
-    setError('');
-    try {
-      await becomeDemoStaff(house.slug);
-      navigate('/uk', { replace: true });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Не удалось открыть кабинет УК');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   if (meState.loading) return <Screen><Main><Card className="card"><MaxTypography.Text className="t2" variant="body" color="secondary">Загрузка…</MaxTypography.Text></Card></Main></Screen>;
   if (meState.error || !me) return <Screen><Main><Note kind="neg">Не удалось загрузить профиль.</Note></Main></Screen>;
 
@@ -278,7 +264,6 @@ export function AttachHouse() {
         <Btn onClick={joinPremise} disabled={submitting || !premise.trim()}>{submitting ? 'Прикрепляем…' : house.is_demo ? 'Подтвердить собственника в демо' : 'Продолжить'}</Btn>
         {house.is_demo && <Btn kind="secondary" onClick={requestOwnerReview} disabled={submitting || !premise.trim()}>{submitting ? 'Создаём заявку…' : 'Отправить заявку на проверку УК'}</Btn>}
         <Btn kind="text" onClick={() => { setHouse(null); setError(''); }}>Выбрать другой дом</Btn>
-        {house.is_demo && <Btn kind="text" onClick={joinDemoStaff} disabled={submitting}>Я сотрудник УК · демо-вход</Btn>}
       </>}
     </Main>
     {!house && <Foot><Btn onClick={chooseHouse} disabled={!inviteHouse && !selectedHouse}>Это мой дом</Btn></Foot>}

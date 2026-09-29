@@ -45,6 +45,7 @@ type env struct {
 	inits    *initiatives.Service
 	meetings *Service
 	house    registry.HouseSummary
+	orgID    string
 	run      int64
 }
 
@@ -83,6 +84,9 @@ func newEnv(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	if e.house, err = e.houses.HouseBySlug(ctx, slug); err != nil {
+		t.Fatal(err)
+	}
+	if e.orgID, err = e.houses.DemoOrgID(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `
@@ -195,7 +199,7 @@ func TestMeetingCreateAndBallotsIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, u := range []access.User{alice, dave} {
-		if _, err := e.users.ConfirmDemoStaff(ctx, u.ID, e.house.ID); err != nil {
+		if err := e.users.SetOrgStaff(ctx, u.MaxUserID, e.orgID, "operator", true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -411,7 +415,7 @@ func TestMeetingResultIntegration(t *testing.T) {
 	if _, err := e.users.ConfirmDemoOwner(ctx, bob.ID, e.house.ID, "13", 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.users.ConfirmDemoStaff(ctx, alice.ID, e.house.ID); err != nil {
+	if err := e.users.SetOrgStaff(ctx, alice.MaxUserID, e.orgID, "operator", true); err != nil {
 		t.Fatal(err)
 	}
 	initiative := e.demandInitiative(t, alice.ID)
@@ -612,7 +616,7 @@ func TestGISResultsIntegration(t *testing.T) {
 	if _, err := e.users.ConfirmDemoOwner(ctx, bob.ID, e.house.ID, "13", 1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.users.ConfirmDemoStaff(ctx, alice.ID, e.house.ID); err != nil {
+	if err := e.users.SetOrgStaff(ctx, alice.MaxUserID, e.orgID, "operator", true); err != nil {
 		t.Fatal(err)
 	}
 	initiative := e.demandInitiative(t, alice.ID)

@@ -54,7 +54,8 @@
   - `GET /houses/{houseID}/initiatives`, `POST /houses/{houseID}/initiatives`;
   - `GET /initiatives/{id}` — карточка с `allowed_actions` и «моим голосом»;
   - `POST /initiatives/{id}/start-poll`, `PUT /initiatives/{id}/my-vote`, `GET /initiatives/{id}/poll`;
-  - кабинет УК: `POST /houses/{slug}/demo-staff`, `GET /orgs`, `GET /orgs/{orgID}/houses`, `orgs` в `/me`;
+  - кабинет УК: роли из `org_members`, `GET /orgs`, `GET /orgs/{orgID}/houses`, `orgs` в `/me`;
+  - администрирование: `system_admins`, `/admin` в боте, панель приложения и ручки `/admin/*`; `UK_MAX_USER_IDS` и самовыдача демо-доступа удалены;
   - собрание: `POST /initiatives/{id}/meetings`, `GET /meetings/{id}`, `GET /meetings/{id}/tracker`,
     `POST /meetings/{id}/ballots/receive`, `PUT /ballots/{id}/decisions`, `PUT /meetings/{id}/gis-results`,
     `GET /meetings/{id}/result-preview`,
