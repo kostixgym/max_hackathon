@@ -55,13 +55,12 @@ type PathSelector interface {
 
 // Deps are the dependencies of the API.
 type Deps struct {
-	Auth            *Authenticator
-	Houses          Houses
-	Profiles        Profiles
-	DB              Readiness
-	Log             *slog.Logger
-	DevMode         bool
-	UKIDsConfigured bool
+	Auth     *Authenticator
+	Houses   Houses
+	Profiles Profiles
+	DB       Readiness
+	Log      *slog.Logger
+	DevMode  bool
 
 	// Stage 1: templates, initiatives and the support poll.
 	Access           AccessChecks
@@ -82,6 +81,7 @@ type Deps struct {
 	// file stays as it is. A nil module keeps its routes at 501.
 	Orgs      Orgs
 	OrgHouses OrgHouses
+	Admin     AdminAccess
 	Demands   Demands
 	Meetings  Meetings
 }
@@ -94,7 +94,7 @@ const maxBodyBytes = 64 << 10
 // NewHandler builds the router of the API.
 func NewHandler(d Deps) http.Handler {
 	h := &handlers{
-		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode, ukIDsConfigured: d.UKIDsConfigured,
+		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode, admin: d.Admin,
 		access: d.Access, templates: d.Templates, initiatives: d.Initiatives,
 		initiativeReader: d.InitiativeReader, pathSelector: d.PathSelector, pollStarter: d.PollStarter,
 		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers, guestAttacher: d.GuestAttacher, phoneVerifier: d.PhoneVerifier,
@@ -131,7 +131,7 @@ func NewHandler(d Deps) http.Handler {
 	protected.GET("/premises/:premiseID/owners", h.premiseOwners)
 	protected.GET("/houses/:house/meeting-officer-candidates", h.meetingOfficerCandidates)
 
-	// Stage 1: the support poll. :house is the invite slug for the demo shortcut (it
+	// Stage 1: the support poll. :house is the invite slug for the demo membership (it
 	// comes from the house link) and the house id for initiatives (it comes from /me).
 	protected.GET("/templates", h.listTemplates)
 	protected.GET("/templates/:code", h.template)
@@ -147,8 +147,10 @@ func NewHandler(d Deps) http.Handler {
 	// Sprint to 30.09 (К0): the routes of path A are final, the handlers of
 	// demand and meeting modules land with their steps (Д1–Д3, Г2–Г6) and answer
 	// 501 not_implemented until then.
-	protected.POST("/houses/:house/demo-staff", h.demoStaff)
 	protected.GET("/orgs", h.myOrgs)
+	protected.GET("/admin/organizations", h.adminOrganizations)
+	protected.GET("/admin/users", h.adminUsers)
+	protected.PUT("/admin/org-staff", h.adminSetOrgStaff)
 	protected.GET("/orgs/:orgID/houses", h.orgHousesList)
 	protected.GET("/orgs/:orgID/demands", h.orgDemands)
 	protected.GET("/orgs/:orgID/owner-requests", h.orgOwnerRequests)
@@ -191,12 +193,12 @@ func limitBody(n int64) gin.HandlerFunc {
 }
 
 type handlers struct {
-	houses          Houses
-	profiles        Profiles
-	db              Readiness
-	log             *slog.Logger
-	devMode         bool
-	ukIDsConfigured bool
+	houses   Houses
+	profiles Profiles
+	db       Readiness
+	log      *slog.Logger
+	devMode  bool
+	admin    AdminAccess
 
 	// Stage 1.
 	access           AccessChecks
@@ -243,12 +245,12 @@ func (h *handlers) readyz(c *gin.Context) {
 }
 
 type meResponse struct {
-	User            meUser           `json:"user"`
-	DevMode         bool             `json:"dev_mode"`
-	UKIDsConfigured bool             `json:"uk_ids_configured"`
-	House           *houseJSON       `json:"house"`
-	Memberships     []membershipJSON `json:"memberships"`
-	Orgs            []orgJSON        `json:"orgs"`
+	User        meUser           `json:"user"`
+	DevMode     bool             `json:"dev_mode"`
+	IsAdmin     bool             `json:"is_admin"`
+	House       *houseJSON       `json:"house"`
+	Memberships []membershipJSON `json:"memberships"`
+	Orgs        []orgJSON        `json:"orgs"`
 }
 
 type meUser struct {
@@ -268,11 +270,20 @@ func (h *handlers) me(c *gin.Context) {
 		return
 	}
 	resp := meResponse{
-		User:            meUser{ID: id.UserID, FirstName: id.FirstName},
-		DevMode:         h.devMode,
-		UKIDsConfigured: h.ukIDsConfigured,
-		Memberships:     make([]membershipJSON, 0),
-		Orgs:            make([]orgJSON, 0),
+		User:        meUser{ID: id.UserID, FirstName: id.FirstName},
+		DevMode:     h.devMode,
+		IsAdmin:     false,
+		Memberships: make([]membershipJSON, 0),
+		Orgs:        make([]orgJSON, 0),
+	}
+	if h.admin != nil {
+		isAdmin, err := h.admin.IsSystemAdmin(c.Request.Context(), id.UserID)
+		if err != nil {
+			h.log.Error("check system administrator", "err", err)
+			writeError(c, http.StatusInternalServerError, "internal", "Не удалось загрузить данные, попробуйте ещё раз")
+			return
+		}
+		resp.IsAdmin = isAdmin
 	}
 
 	memberships, err := h.profiles.MembershipsByUser(c.Request.Context(), id.UserID)

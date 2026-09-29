@@ -12,6 +12,27 @@ type Org struct {
 	Type string // uk / tszh / zhsk
 }
 
+// AllOrgs returns organizations available for administrative staff assignment.
+func (s *Store) AllOrgs(ctx context.Context) ([]Org, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id::text, name, type FROM organizations ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list organizations: %w", err)
+	}
+	defer rows.Close()
+	orgs := make([]Org, 0)
+	for rows.Next() {
+		var o Org
+		if err := rows.Scan(&o.ID, &o.Name, &o.Type); err != nil {
+			return nil, fmt.Errorf("scan organization: %w", err)
+		}
+		orgs = append(orgs, o)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list organizations: %w", err)
+	}
+	return orgs, nil
+}
+
 // OrgsByIDs returns the organizations with the given ids. Unknown ids are skipped.
 func (s *Store) OrgsByIDs(ctx context.Context, ids []string) ([]Org, error) {
 	if len(ids) == 0 {

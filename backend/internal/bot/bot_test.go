@@ -12,8 +12,28 @@ import (
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
 
+	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/registry"
 )
+
+type adminTestAccess struct {
+	allowed bool
+	changes int
+}
+
+func (a *adminTestAccess) IsSystemAdminByMaxID(context.Context, int64) (bool, error) {
+	return a.allowed, nil
+}
+func (*adminTestAccess) SearchKnownUsers(context.Context, string) ([]access.ManagedUser, error) {
+	return []access.ManagedUser{{MaxUserID: 42}}, nil
+}
+func (*adminTestAccess) AllOrganizations(context.Context) ([]registry.Org, error) {
+	return []registry.Org{{ID: "org-1", Name: "УК"}}, nil
+}
+func (a *adminTestAccess) SetOrgStaff(context.Context, int64, string, string, bool) error {
+	a.changes++
+	return nil
+}
 
 type sentMessage struct {
 	body model.NewMessageBody
@@ -192,18 +212,25 @@ func TestIDCommandInPrivateChat(t *testing.T) {
 	}
 }
 
-func TestUKCommandRequiresListedID(t *testing.T) {
+func TestUKCommandOpensAppWithoutEnvironmentAllowlist(t *testing.T) {
 	b, msgs := newBot()
-	b.UKIDs = []int64{42, 43}
 	b.Handle(context.Background(), message(model.ChatTypeDialog, "/uk"))
 	if len(msgs.sent) != 1 || openApp(t, msgs.sent[0].body).Payload != "uk" {
-		t.Fatalf("listed account should get UK button: %+v", msgs.sent)
+		t.Fatalf("UK app shortcut: %+v", msgs.sent)
 	}
+}
 
-	b, msgs = newBot()
-	b.UKIDs = []int64{43}
-	b.Handle(context.Background(), message(model.ChatTypeDialog, "/uk"))
-	if len(msgs.sent) != 1 || len(msgs.sent[0].body.Attachments) != 0 {
-		t.Fatalf("unlisted account got a button: %+v", msgs.sent)
+func TestAdminCommandsCheckDatabaseRoleBeforeChanges(t *testing.T) {
+	b, msgs := newBot()
+	admin := &adminTestAccess{}
+	b.Admin = admin
+	b.Handle(context.Background(), message(model.ChatTypeDialog, "/admin grant 123456789 org-1 operator"))
+	if admin.changes != 0 || len(msgs.sent) != 1 || !strings.Contains(msgs.sent[0].body.Text, "только системному администратору") {
+		t.Fatalf("non-admin command: changes=%d messages=%+v", admin.changes, msgs.sent)
+	}
+	admin.allowed = true
+	b.Handle(context.Background(), message(model.ChatTypeDialog, "/admin grant 123456789 org-1 admin"))
+	if admin.changes != 1 || len(msgs.sent) != 2 || !strings.Contains(msgs.sent[1].body.Text, "Доступ сотрудника УК выдан") {
+		t.Fatalf("admin grant: changes=%d messages=%+v", admin.changes, msgs.sent)
 	}
 }

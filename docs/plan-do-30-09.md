@@ -210,10 +210,11 @@
 - DTO в `API_DESCRIPTION`.
 
 **Доступ (К2), сделано:**
-- демо-сотрудник УК: `POST /houses/{slug}/demo-staff`, только демо-дом;
+- роли сотрудников УК хранятся в `org_members`; самовыдача демо-доступа удалена;
 - `access.IsStaffOf` — видеть; `access.ManagesAsStaff` — действовать как УК; `access.StaffRecipients` — кому писать
   (решение 79);
-- `orgs [{id, name, type, role}]` в `/me` для переключателя «Жилец / УК»;
+- `orgs [{id, name, type, role}]` и `is_admin` в `/me` для переключателя режимов;
+- системный администратор выдаёт роли УК в приложении и командами `/admin` в боте; первый системный администратор задаётся одноразовым SQL;
 - `GET /orgs`, `/orgs/{orgID}/houses`, `/orgs/{orgID}/demands` — последний через `demand.ListByHouses` Димы.
 
 **Зависимости:** VPS есть, домен временный (sslip.io); адрес мини-приложения задаётся на business.max.ru.
@@ -235,7 +236,7 @@
 | Ф2 | Инициативы: список; создание (шаблон → форма по `params_schema`/`ui_schema`); карточка с кнопками по `allowed_actions` | `/templates*`, `/houses/{id}/initiatives`, `/initiatives/{id}` | есть | 27 |
 | Ф3 | Опрос: запуск со сроком, голос с анкетой, прогресс к порогам | `start-poll`, `my-vote`, `poll` | есть | 27–28 |
 | Ф4 | Требование: «Потребовать собрание от УК»; экран — статус, PDF, «Передано в УК», срок 45 дней | `demand`, `demands/{id}*` | Дима, вечер 27-го | 28 |
-| Ф5 | Кабинет УК: «Я сотрудник УК (демо)», переключатель «Жилец / УК», требования, форма собрания (демо-даты по умолчанию, председатель и секретарь из кандидатов) | `demo-staff`, `/orgs*`, `meeting-officer-candidates`, `POST meetings` | есть (PR #7, #8), кроме `/orgs/{id}/demands` — после Д1 | 28 |
+| Ф5 | Кабинет УК: переключатель режимов, требования, форма собрания; панель системного администратора для назначения и отзыва ролей сотрудников УК | `/orgs*`, `/admin/*`, `meeting-officer-candidates`, `POST meetings` | есть | 28–29 |
 | Ф6 | Собрание: сроки, трекер, «Бюллетень получен»; в демо — «Завершить голосование» и «Заполнить бюллетени»; решения по бюллетеню, предпросмотр, «Зафиксировать», протокол | `meetings/{id}*`, `ballots/*`, `result-preview`, `finalize`, `demo/*`, `protocol.pdf` | есть (PR #8, #9), кроме `protocol.pdf` — Дима, 28 | 28–29 |
 | Ф7 | Прогон в MAX (телефон и веб), тексты, скриншоты для презентации | — | — | 29 |
 
@@ -266,7 +267,7 @@
 | `GET /demands/{id}` | — | `{id, initiative_id, channel, status, support_m2, delivered_at, uk_due_at, overdue}` |
 | `POST /demands/{id}/mark-delivered` | `{delivered_at?}` | как `GET /demands/{id}`; `409 already_delivered` |
 | `GET /demands/{id}/pdf` | — | `application/pdf` |
-| `POST /houses/{slug}/demo-staff` | — | `{org: {id, name, type}, role: operator}`; `403 not_demo` |
+| `GET /admin/organizations`, `GET /admin/users?q=...`, `PUT /admin/org-staff` | — / фильтр MAX ID / `{max_user_id, org_id, role, action}` | Требует системную роль; выдаёт или отзывает роль сотрудника УК |
 | `GET /orgs`, `/orgs/{id}/houses`, `/orgs/{id}/demands` | — | `{orgs}`, `{houses}`, `{demands: [{id, initiative_id, initiative_title, house: {id, address}, status, support_m2, delivered_at, uk_due_at, overdue, meeting_id}]}` |
 | `POST /initiatives/{id}/meetings` | `{form: gis_electronic\|paper_absentee, notice_at, voting_starts_at, voting_ends_at, chair_owner_id, secretary_owner_id}` | `201` как `GET /meetings/{id}`; `403 staff_only`; `409 active_meeting_exists` / `wrong_stage`; `400 invalid_dates` / `invalid_officers` |
 | `GET /meetings/{id}` | — | `{id, initiative_id, title, house, attempt, form, status, notice_at, voting_starts_at, voting_ends_at, chair, secretary, agenda_items [{id, position, text, majority_rule}], progress {ballots_total, ballots_received, participants_m2, total_m2, quorum_above_m2}, is_admin, outcome, finalized_at}` |
@@ -297,10 +298,10 @@
 Ставит тот, кто меняет данные, в своей транзакции. Отправляет бот (Костя).
 
 **БД:**
-- новых таблиц нет; `demands` переходит в модуль `demand`;
-- новая миграция, если понадобится, — `YYYYMMDDHHMMSS_<модуль>_<что>.sql`, чтобы номера не сталкивались.
+- `system_admins` хранит отдельную системную роль; роли УК остаются в `org_members`;
+- миграции именуются `YYYYMMDDHHMMSS_<модуль>_<что>.sql`, чтобы номера не сталкивались.
 
-**Правила демо-дома:** `demo-staff`, даты собрания без 10 дней, `finish-voting`, `fill-ballots` — в обычном доме
+**Правила демо-дома:** даты собрания без 10 дней, `finish-voting`, `fill-ballots` — в обычном доме
 `403 not_demo`. Сотрудник демо-УК ведёт только свои инициативы, уведомления по ним получает только инициатор
 (решение 79).
 

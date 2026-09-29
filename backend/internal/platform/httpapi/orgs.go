@@ -1,7 +1,7 @@
 package httpapi
 
 // The staff part of the API (К2 of docs/plan-do-30-09.md): who the user works
-// for, the houses of the organization and the demo-staff shortcut. The demands
+// for and the houses of the organization. The demands
 // list of an organization lands here together with Дима's demand module (Д1).
 
 import (
@@ -21,7 +21,6 @@ import (
 type Orgs interface {
 	OrgsByUser(ctx context.Context, userID string) ([]access.OrgSummary, error)
 	OrgByUser(ctx context.Context, userID, orgID string) (access.OrgSummary, error)
-	ConfirmDemoStaff(ctx context.Context, userID, houseID string) (access.OrgSummary, error)
 }
 
 // OrgHouses lists the houses of an organization (the registry module).
@@ -187,53 +186,6 @@ func (h *handlers) orgDemands(c *gin.Context) {
 		list = append(list, row)
 	}
 	writeJSON(c, http.StatusOK, gin.H{"demands": list})
-}
-
-func (h *handlers) demoStaff(c *gin.Context) {
-	if !h.orgsWired(c) {
-		return
-	}
-
-	id, ok := IdentityFrom(c)
-	if !ok {
-		writeError(c, http.StatusInternalServerError, "internal", "Внутренняя ошибка, попробуйте ещё раз")
-
-		return
-	}
-
-	house, err := h.houses.HouseBySlug(c.Request.Context(), c.Param("house"))
-	if errors.Is(err, registry.ErrNotFound) {
-		writeError(c, http.StatusNotFound, "house_not_found", "Дом не найден. Проверьте ссылку от управляющей компании")
-
-		return
-	}
-	if err != nil {
-		h.log.Error("house by slug for demo staff", "err", err)
-		writeError(c, http.StatusInternalServerError, "internal", "Не удалось стать сотрудником УК, попробуйте ещё раз")
-
-		return
-	}
-
-	org, err := h.orgs.ConfirmDemoStaff(c.Request.Context(), id.UserID, house.ID)
-	switch {
-	case errors.Is(err, access.ErrForbidden):
-		writeError(c, http.StatusForbidden, "not_staff", "Ваш MAX ID не добавлен в список сотрудников УК")
-	case errors.Is(err, access.ErrNotDemo):
-		writeError(c, http.StatusForbidden, "not_demo", "Быстрый вход возможен только в демо-доме")
-	case errors.Is(err, access.ErrNotFound):
-		writeError(c, http.StatusNotFound, "house_not_found", "Дом не найден. Проверьте ссылку от управляющей компании")
-	case errors.Is(err, access.ErrNoOrg):
-		writeError(c, http.StatusConflict, "no_org", "У демо-дома нет управляющей организации")
-	case err != nil:
-		h.log.Error("demo staff", "err", err)
-		writeError(c, http.StatusInternalServerError, "internal", "Не удалось стать сотрудником УК, попробуйте ещё раз")
-	default:
-		// Контракт: {org: {id, name, type}, role}. role не дублируется внутри org.
-		writeJSON(c, http.StatusOK, gin.H{
-			"org":  gin.H{"id": org.ID, "name": org.Name, "type": org.Type},
-			"role": org.Role,
-		})
-	}
 }
 
 type orgJSON struct {

@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	maxapi "github.com/max-messenger/max-bot-api-client-go/v2"
 	"github.com/max-messenger/max-bot-api-client-go/v2/model"
 
+	"maxhackathon/backend/internal/access"
 	"maxhackathon/backend/internal/initiatives"
 	"maxhackathon/backend/internal/registry"
 )
@@ -37,6 +39,13 @@ type Houses interface {
 type Identity struct {
 	UserID   int64
 	Username string
+}
+
+type Admin interface {
+	IsSystemAdminByMaxID(context.Context, int64) (bool, error)
+	SearchKnownUsers(context.Context, string) ([]access.ManagedUser, error)
+	AllOrganizations(context.Context) ([]registry.Org, error)
+	SetOrgStaff(context.Context, int64, string, string, bool) error
 }
 
 // Bot answers chat updates.
@@ -66,7 +75,7 @@ type Bot struct {
 	// /id is available in private chat so staff can give their MAX ID to the
 	// administrator without exposing bot credentials.
 	DevMode bool
-	UKIDs   []int64
+	Admin   Admin
 
 	// Now is the clock of the bot; nil means time.Now.
 	Now func() time.Time
@@ -113,13 +122,18 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 		case cmd.Command == "/start":
 			b.start(ctx, u, cmd.RemainingText)
 		case cmd.Command == "/id":
+			if b.Users != nil {
+				if _, err := b.Users.EnsureUser(ctx, u.UserID); err != nil {
+					b.Log.Error("bot: register account for admin lookup", "err", err)
+					b.send(ctx, u, "Не удалось подготовить аккаунт. Попробуйте позже.", nil)
+					return
+				}
+			}
 			b.send(ctx, u, fmt.Sprintf("Ваш MAX ID: %d\nПередайте этот номер администратору для доступа в кабинет УК.", u.UserID), nil)
 		case cmd.Command == "/uk":
-			if b.isUK(u.UserID) {
-				b.send(ctx, u, "Откройте кабинет УК:", openAppButton(b.Me, "Кабинет УК", "uk"))
-			} else {
-				b.send(ctx, u, "Доступ к кабинету УК не выдан. Отправьте команду /id и передайте номер администратору.", nil)
-			}
+			b.send(ctx, u, "Режим УК доступен из переключателя режимов в приложении.", b.appKeyboard(u.UserID, "uk"))
+		case cmd.Command == "/admin":
+			b.adminCommand(ctx, u, cmd.RemainingText)
 		default:
 			b.help(ctx, u)
 		}
@@ -208,20 +222,89 @@ func (b *Bot) help(ctx context.Context, u model.Update) {
 	b.send(ctx, u, helpText, b.appKeyboard(u.UserID, ""))
 }
 
-func (b *Bot) isUK(maxUserID int64) bool {
-	for _, id := range b.UKIDs {
-		if id == maxUserID {
-			return true
-		}
+func (b *Bot) adminCommand(ctx context.Context, u model.Update, args string) {
+	if b.Admin == nil {
+		b.send(ctx, u, "Управление доступом временно недоступно.", nil)
+		return
 	}
-	return false
+	allowed, err := b.Admin.IsSystemAdminByMaxID(ctx, u.UserID)
+	if err != nil {
+		b.Log.Error("bot: check system admin", "err", err)
+		b.send(ctx, u, "Не удалось проверить права.", nil)
+		return
+	}
+	if !allowed {
+		b.send(ctx, u, "Команды администратора доступны только системному администратору.", nil)
+		return
+	}
+	parts := strings.Fields(args)
+	if len(parts) == 0 {
+		b.send(ctx, u, "Команды администратора:\n/admin orgs\n/admin users <часть_MAX_ID>\n/admin grant <MAX_ID> <ORG_ID> <operator|admin>\n/admin revoke <MAX_ID> <ORG_ID>", nil)
+		return
+	}
+	switch parts[0] {
+	case "orgs":
+		orgs, err := b.Admin.AllOrganizations(ctx)
+		if err != nil {
+			b.Log.Error("bot: list organizations", "err", err)
+			b.send(ctx, u, "Не удалось загрузить организации.", nil)
+			return
+		}
+		lines := []string{"Организации (ID — название):"}
+		for _, org := range orgs {
+			lines = append(lines, org.ID+" — "+org.Name)
+		}
+		b.send(ctx, u, strings.Join(lines, "\n"), nil)
+	case "users":
+		if len(parts) != 2 || len(parts[1]) < 2 {
+			b.send(ctx, u, "Формат: /admin users <часть_MAX_ID>", nil)
+			return
+		}
+		users, err := b.Admin.SearchKnownUsers(ctx, parts[1])
+		if err != nil {
+			b.Log.Error("bot: search users", "err", err)
+			b.send(ctx, u, "Не удалось найти пользователей.", nil)
+			return
+		}
+		lines := []string{"Зарегистрированные пользователи (MAX ID):"}
+		for _, user := range users {
+			lines = append(lines, strconv.FormatInt(user.MaxUserID, 10))
+		}
+		b.send(ctx, u, strings.Join(lines, "\n"), nil)
+	case "grant", "revoke":
+		want := 4
+		if parts[0] == "revoke" {
+			want = 3
+		}
+		if len(parts) != want {
+			b.send(ctx, u, "Формат: /admin grant <MAX_ID> <ORG_ID> <operator|admin> или /admin revoke <MAX_ID> <ORG_ID>", nil)
+			return
+		}
+		maxID, parseErr := strconv.ParseInt(parts[1], 10, 64)
+		role := "operator"
+		if parts[0] == "grant" {
+			role = parts[3]
+		}
+		if parseErr != nil || maxID <= 0 || (role != "operator" && role != "admin") {
+			b.send(ctx, u, "Проверьте MAX ID и роль.", nil)
+			return
+		}
+		if err := b.Admin.SetOrgStaff(ctx, maxID, parts[2], role, parts[0] == "grant"); err != nil {
+			b.send(ctx, u, "Не удалось изменить доступ: пользователь или организация не найдены, либо неверная роль.", nil)
+			return
+		}
+		verb := "отозван"
+		if parts[0] == "grant" {
+			verb = "выдан"
+		}
+		b.send(ctx, u, "Доступ сотрудника УК "+verb+".", nil)
+	default:
+		b.send(ctx, u, "Неизвестная команда. Отправьте /admin для справки.", nil)
+	}
 }
 
 func (b *Bot) appKeyboard(maxUserID int64, payload string) *model.Keyboard {
 	kb := openAppButton(b.Me, "Открыть приложение", payload)
-	if b.isUK(maxUserID) {
-		kb.AddRow().AddButton(appButton(b.Me, "Кабинет УК", "uk"))
-	}
 	return kb
 }
 

@@ -60,6 +60,7 @@
     "first_name": "Анна"
   },
   "dev_mode": false,
+  "is_admin": false,
   "house": {
     "id": "0199...",
     "slug": "demo-house",
@@ -771,16 +772,25 @@
 
 ## Кабинет УК
 
-### `POST /api/v1/houses/{slug}/demo-staff`
+Роли сотрудников выдаёт системный администратор; самостоятельный демо-вход удалён.
 
-**Реализовано.** Делает пользователя сотрудником (`operator`) демо-УК. Работает только в демо-доме, повторный вызов
-ничего не меняет. `{slug}` — пригласительная ссылка дома.
+### `GET /api/v1/admin/organizations`
 
-**Request body:** отсутствует.
+Список организаций для панели администратора. Требует системную роль.
 
-**Response `200 OK`:** `{"org": {"id": "0199...", "name": "ООО «Демо-УК»", "type": "uk"}, "role": "operator"}`.
+### `GET /api/v1/admin/users?q={часть_MAX_ID}`
 
-**Ошибки:** `403 not_demo`, `404 house_not_found`, `409 no_org`.
+Ищет зарегистрированные аккаунты по MAX ID (от двух цифр, максимум 50 результатов; ID возвращается строкой). Требует системную роль.
+
+### `PUT /api/v1/admin/org-staff`
+
+Выдаёт или отзывает роль сотрудника в организации. Требует системную роль.
+
+**Request body:** `{"max_user_id":"123456789","org_id":"0199...","role":"operator","action":"grant"}`.
+
+`role`: `operator` или `admin`; `action`: `grant` или `revoke`. `GET /api/v1/me` возвращает `is_admin` наряду со списком `orgs`.
+
+**Ошибки:** `403 admin_required`, `404 user_or_org_not_found`, `400 invalid_request`.
 
 ### `GET /api/v1/orgs`
 

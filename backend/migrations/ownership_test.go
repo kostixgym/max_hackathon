@@ -16,7 +16,7 @@ var tableOwners = map[string][]string{
 		"organizations", "houses", "premises", "owners", "owner_records",
 		"registry_uploads", "registry_correction_requests",
 	},
-	"access":      {"users", "memberships", "org_members"},
+	"access":      {"users", "memberships", "org_members", "system_admins"},
 	"rules":       {"decision_types", "templates", "template_items"},
 	"initiatives": {"initiatives", "agenda_items", "initiative_questions"},
 	"poll":        {"poll_votes"},

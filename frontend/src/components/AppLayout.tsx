@@ -6,17 +6,17 @@ import { fetchMe, getStartParam } from '../lib/api';
 import { Seg, useTheme } from './ui';
 import { Icon } from './Icon';
 
-type Mode = 'resident' | 'uk';
+type Mode = 'resident' | 'uk' | 'admin';
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const { theme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const profile = useApi(fetchMe, [location.key]);
-  const [canManage, setCanManage] = useState(false);
+  const [availableModes, setAvailableModes] = useState<Mode[]>(['resident']);
   const [lastMode, setLastMode] = useState<Mode>('resident');
   const launchHandled = useRef(false);
-  const routeMode: Mode | null = location.pathname === '/uk' || location.pathname.startsWith('/uk/')
+  const routeMode: Mode | null = location.pathname === '/admin' ? 'admin' : location.pathname === '/uk' || location.pathname.startsWith('/uk/')
     ? 'uk'
     : location.pathname === '/' || location.pathname === '/attach' || location.pathname.startsWith('/home')
       ? 'resident' : null;
@@ -32,13 +32,15 @@ export function AppLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!profile.data) return;
-    const allowed = profile.data.orgs.length > 0;
+    const modes: Mode[] = ['resident'];
+    if (profile.data.orgs.length > 0) modes.push('uk');
+    if (profile.data.is_admin) modes.push('admin');
     // Keep the last confirmed role if a later request fails, so errors never
     // remove navigation. A successful response can still revoke the role.
-    setCanManage(allowed);
+    setAvailableModes(modes);
     if (!launchHandled.current) {
       launchHandled.current = true;
-      if (allowed && getStartParam() === 'uk' && location.pathname === '/') {
+      if (modes.includes('uk') && getStartParam() === 'uk' && location.pathname === '/') {
         navigate('/uk', { replace: true });
       }
     }
@@ -47,15 +49,16 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const openMode = (next: Mode) => {
     launchHandled.current = true;
     setLastMode(next);
-    navigate(next === 'uk' ? '/uk' : '/');
+    navigate(next === 'uk' ? '/uk' : next === 'admin' ? '/admin' : '/');
   };
 
   return (
     <div className={`app-shell kit${theme === 'dark' ? ' t-dark' : ''}`}>
       <nav className="app-navigation" aria-label="Главное меню">
-        {canManage && <Seg<Mode> value={mode} onChange={openMode} options={[
+        {availableModes.length > 1 && <Seg<Mode> value={mode} onChange={openMode} options={[
           { value: 'resident', label: 'Житель' },
-          { value: 'uk', label: 'УК' },
+          ...(availableModes.includes('uk') ? [{ value: 'uk' as const, label: 'УК' }] : []),
+          ...(availableModes.includes('admin') ? [{ value: 'admin' as const, label: 'Администратор' }] : []),
         ]} />}
         <Button className="app-menu-button" type="button" variant="ghost" size="medium"
           onClick={() => openMode('resident')}><span className="app-menu-label"><Icon name="menu" small />В меню</span></Button>

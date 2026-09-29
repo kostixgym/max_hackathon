@@ -1,8 +1,7 @@
 package access
 
-// Staff of management organizations and the demo-staff shortcut (К2 of
-// docs/plan-do-30-09.md). The staff role gates the management cabinet: demands,
-// meeting creation and ballot processing.
+// Staff memberships in management organizations (К2 of docs/plan-do-30-09.md).
+// The staff role gates the management cabinet: demands, meeting creation and ballot processing.
 
 import (
 	"context"
@@ -192,55 +191,4 @@ func (s *Store) OrgByUser(ctx context.Context, userID, orgID string) (OrgSummary
 	}
 
 	return OrgSummary{}, ErrForbidden
-}
-
-// ErrNoOrg means the demo house has no management organization to join.
-var ErrNoOrg = errors.New("the house has no management organization")
-
-// ConfirmDemoStaff makes the user an operator of the management organization of
-// the demo house (docs/01, «Как это проверит жюри»): the jury gets the
-// management-company view without a real organization. Only a demo house, and
-// the operation is idempotent.
-func (s *Store) ConfirmDemoStaff(ctx context.Context, userID, houseID string) (OrgSummary, error) {
-	allowed, err := s.configuredUK(ctx, userID)
-	if err != nil {
-		return OrgSummary{}, err
-	}
-	if !allowed {
-		return OrgSummary{}, ErrForbidden
-	}
-	house, err := s.registry.House(ctx, houseID)
-	if errors.Is(err, registry.ErrNotFound) {
-		return OrgSummary{}, ErrNotFound
-	}
-	if err != nil {
-		return OrgSummary{}, err
-	}
-	if !house.IsDemo {
-		return OrgSummary{}, ErrNotDemo
-	}
-	if house.OrgID == nil {
-		return OrgSummary{}, ErrNoOrg
-	}
-
-	var org OrgSummary
-	_, err = s.pool.Exec(ctx, `
-		INSERT INTO org_members (user_id, org_id, role) VALUES ($1::uuid, $2::uuid, 'operator')
-		ON CONFLICT (user_id, org_id) DO UPDATE SET role = 'operator'`,
-		userID, *house.OrgID)
-	if err != nil {
-		return OrgSummary{}, fmt.Errorf("confirm demo staff: %w", err)
-	}
-
-	// The organization summary comes from the registry module.
-	orgs, err := s.registry.OrgsByIDs(ctx, []string{*house.OrgID})
-	if err != nil {
-		return OrgSummary{}, err
-	}
-	if len(orgs) != 1 {
-		return OrgSummary{}, fmt.Errorf("demo org %s not found", *house.OrgID)
-	}
-	org = OrgSummary{ID: orgs[0].ID, Name: orgs[0].Name, Type: orgs[0].Type, Role: "operator"}
-
-	return org, nil
 }

@@ -49,6 +49,10 @@ func TestDemoStaff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	orgID, err := houses.DemoOrgID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	store := NewStore(pool, houses, nil)
 
@@ -78,17 +82,21 @@ func TestDemoStaff(t *testing.T) {
 		t.Fatalf("before: orgs = %v, %v", orgs, err)
 	}
 
-	// The demo shortcut makes the user an operator of the demo organization.
-	org, err := store.ConfirmDemoStaff(ctx, alice.ID, house.ID)
-	if err != nil {
+	// An administrator grants an operator role in the demo organization.
+	if err := store.SetOrgStaff(ctx, alice.MaxUserID, orgID, "operator", true); err != nil {
 		t.Fatal(err)
 	}
+	orgs, err = store.OrgsByUser(ctx, alice.ID)
+	if err != nil || len(orgs) != 1 {
+		t.Fatalf("staff orgs = %+v, %v", orgs, err)
+	}
+	org := orgs[0]
 	if org.Role != "operator" || org.Name == "" || org.Type != "uk" {
 		t.Fatalf("org = %+v", org)
 	}
 
-	// It is idempotent: the second call keeps one membership.
-	if _, err := store.ConfirmDemoStaff(ctx, alice.ID, house.ID); err != nil {
+	// Granting again updates one membership rather than creating a duplicate.
+	if err := store.SetOrgStaff(ctx, alice.MaxUserID, orgID, "operator", true); err != nil {
 		t.Fatalf("second confirm: %v", err)
 	}
 
@@ -114,7 +122,7 @@ func TestDemoStaff(t *testing.T) {
 
 	// Решение 79: in the demo house both testers are staff of the one demo
 	// organization, but each acts and is notified only on the initiatives they lead.
-	if _, err := store.ConfirmDemoStaff(ctx, bob.ID, house.ID); err != nil {
+	if err := store.SetOrgStaff(ctx, bob.MaxUserID, orgID, "operator", true); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range []struct {
