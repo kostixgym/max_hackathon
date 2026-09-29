@@ -15,6 +15,7 @@ import {
   finalizeMeeting,
   demoFillBallots,
   demoFinishVoting,
+  downloadPDF,
   parseM2,
   type MeetingFinal,
 } from '../../lib/api';
@@ -58,6 +59,8 @@ export function Meeting() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [demoBusy, setDemoBusy] = useState(false);
+  const [downloadError, setDownloadError] = useState('');
+  const [downloading, setDownloading] = useState(false);
   const meetingState = useApi(() => (id ? fetchMeeting(id) : Promise.reject('No ID')), [id]);
 
   if (meetingState.loading) return <Screen><Header title="Собрание" /><Main><Card className="card"><MaxTypography.Text className="t2" variant="body" color="secondary">Загрузка...</MaxTypography.Text></Card></Main></Screen>;
@@ -139,7 +142,16 @@ export function Meeting() {
           </>
         )}
         {meeting.status === 'finalized' && (
-          <Note kind="info">Итог зафиксирован. Формирование PDF-протокола пока не поддержано сервером.</Note>
+          <>
+            {downloadError && <Note kind="neg">{downloadError}</Note>}
+            <Btn icon="download" disabled={downloading} onClick={async () => {
+              setDownloading(true);
+              setDownloadError('');
+              try { await downloadPDF(`/meetings/${id}/protocol.pdf`, `protocol-${id}.pdf`); }
+              catch (error) { setDownloadError(error instanceof Error ? error.message : 'Не удалось скачать протокол'); }
+              finally { setDownloading(false); }
+            }}>{downloading ? 'Формируем…' : 'Скачать протокол'}</Btn>
+          </>
         )}
       </Foot>
     </Screen>
@@ -459,6 +471,8 @@ export function ResultPreview() {
 export function Result() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
+  const [downloadError, setDownloadError] = useState('');
+  const [downloading, setDownloading] = useState(false);
   const meetingState = useApi(() => (id ? fetchMeeting(id) : Promise.reject('No ID')), [id]);
 
   if (meetingState.loading) return <Screen><Header title="Итог собрания" /><Main><Card className="card"><MaxTypography.Text className="t2" variant="body" color="secondary">Загрузка...</MaxTypography.Text></Card></Main></Screen>;
@@ -486,8 +500,18 @@ export function Result() {
           ))}
         </UiList>
 
-        <Note kind="info" icon="calendar">Итог зафиксирован в системе. Ручная выгрузка PDF-протокола пока недоступна.</Note>
+        <Note kind="info" icon="calendar">Итог зафиксирован в системе. Черновик протокола можно скачать в PDF.</Note>
       </Main>
+      <Foot>
+        {downloadError && <Note kind="neg">{downloadError}</Note>}
+        <Btn icon="download" disabled={downloading} onClick={async () => {
+          setDownloading(true);
+          setDownloadError('');
+          try { await downloadPDF(`/meetings/${id}/protocol.pdf`, `protocol-${id}.pdf`); }
+          catch (error) { setDownloadError(error instanceof Error ? error.message : 'Не удалось скачать протокол'); }
+          finally { setDownloading(false); }
+        }}>{downloading ? 'Формируем…' : 'Скачать протокол'}</Btn>
+      </Foot>
     </Screen>
   );
 }

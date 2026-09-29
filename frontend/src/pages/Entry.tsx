@@ -46,8 +46,8 @@ function HouseCard({ house, memberships, onOpen }: {
               <div className="entry-apartment-copy">
                 <div className="entry-apartment-details-row">
                   <MaxTypography.Text variant="detail" color="secondary">{details}</MaxTypography.Text>
-                  <Status kind={membership.status === 'verified' ? 'ok' : 'none'}>
-                    {membership.status === 'verified' ? 'Подтверждена' : 'Не подтверждена'}
+                  <Status kind={membership.status === 'verified' ? 'ok' : membership.status === 'pending' && membership.role === 'owner' ? 'paper' : 'none'}>
+                    {membership.status === 'verified' ? 'Подтверждена' : membership.status === 'pending' && membership.role === 'owner' ? 'На проверке' : membership.status === 'rejected' ? 'Отклонена' : 'Не подтверждена'}
                   </Status>
                 </div>
                 {membership.rejection_reason && <MaxTypography.Text variant="detail" color="secondary">Причина отказа: {membership.rejection_reason}</MaxTypography.Text>}
@@ -101,7 +101,6 @@ export function Entry() {
           return <HouseCard key={houseId} house={house} memberships={memberships} onOpen={() => navigate(`${path}?house=${encodeURIComponent(house.slug)}`)} />;
         }) : <Card className="card"><MaxTypography.Text className="t" variant="body">Вы ещё не добавили ни одной квартиры. Начните с кнопки ниже.</MaxTypography.Text></Card>}
 
-        {me.orgs?.length > 0 && <Btn kind="secondary" onClick={() => navigate('/uk')}>Кабинет управляющей компании</Btn>}
       </Main>
       <Foot>
         <Btn onClick={() => navigate('/attach')}>Добавить квартиру</Btn>

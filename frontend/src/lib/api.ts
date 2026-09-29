@@ -173,6 +173,7 @@ export interface Membership {
 export interface MeResponse {
   user: MeUser;
   dev_mode: boolean;
+  uk_ids_configured: boolean;
   house: HouseJSON | null; // present if opened via house invite link
   memberships: Membership[];
   orgs: Org[];

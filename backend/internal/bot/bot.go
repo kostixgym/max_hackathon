@@ -63,10 +63,10 @@ type Bot struct {
 	Members          Members
 	InitiativeReader InitiativeReader
 
-	// DevMode enables /id: it tells the user their MAX id, which the API of the
-	// development mode accepts in X-Dev-User-Id. Until the mini-app is ready this is
-	// the only way to act in the API as a real MAX account. The id is not logged.
+	// /id is available in private chat so staff can give their MAX ID to the
+	// administrator without exposing bot credentials.
 	DevMode bool
+	UKIDs   []int64
 
 	// Now is the clock of the bot; nil means time.Now.
 	Now func() time.Time
@@ -112,8 +112,14 @@ func (b *Bot) Handle(ctx context.Context, u model.Update) {
 		switch {
 		case cmd.Command == "/start":
 			b.start(ctx, u, cmd.RemainingText)
-		case cmd.Command == "/id" && b.DevMode:
-			b.send(ctx, u, fmt.Sprintf("Ваш MAX id: %d\n\nКоманда работает только в режиме разработки (DEV_MODE).", u.UserID), nil)
+		case cmd.Command == "/id":
+			b.send(ctx, u, fmt.Sprintf("Ваш MAX ID: %d\nПередайте этот номер администратору для доступа в кабинет УК.", u.UserID), nil)
+		case cmd.Command == "/uk":
+			if b.isUK(u.UserID) {
+				b.send(ctx, u, "Откройте кабинет УК:", openAppButton(b.Me, "Кабинет УК", "uk"))
+			} else {
+				b.send(ctx, u, "Доступ к кабинету УК не выдан. Отправьте команду /id и передайте номер администратору.", nil)
+			}
 		default:
 			b.help(ctx, u)
 		}
@@ -131,7 +137,7 @@ func (b *Bot) start(ctx context.Context, u model.Update, slug string) {
 		house, err := b.Houses.HouseBySlug(ctx, slug)
 		switch {
 		case err == nil:
-			b.send(ctx, u, houseGreeting(house), openAppButton(b.Me, "Открыть приложение", house.InviteSlug))
+			b.send(ctx, u, houseGreeting(house), b.appKeyboard(u.UserID, house.InviteSlug))
 
 			return
 		case !errors.Is(err, registry.ErrNotFound):
@@ -139,7 +145,7 @@ func (b *Bot) start(ctx context.Context, u model.Update, slug string) {
 		}
 	}
 
-	b.send(ctx, u, genericGreeting, openAppButton(b.Me, "Открыть приложение", ""))
+	b.send(ctx, u, genericGreeting, b.appKeyboard(u.UserID, ""))
 }
 
 // openPoll answers a poll link from the initiator (решение 78): a verified member of
@@ -199,7 +205,24 @@ func (b *Bot) openPoll(ctx context.Context, u model.Update, initiativeID string)
 }
 
 func (b *Bot) help(ctx context.Context, u model.Update) {
-	b.send(ctx, u, helpText, openAppButton(b.Me, "Открыть приложение", ""))
+	b.send(ctx, u, helpText, b.appKeyboard(u.UserID, ""))
+}
+
+func (b *Bot) isUK(maxUserID int64) bool {
+	for _, id := range b.UKIDs {
+		if id == maxUserID {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) appKeyboard(maxUserID int64, payload string) *model.Keyboard {
+	kb := openAppButton(b.Me, "Открыть приложение", payload)
+	if b.isUK(maxUserID) {
+		kb.AddRow().AddButton(appButton(b.Me, "Кабинет УК", "uk"))
+	}
+	return kb
 }
 
 func (b *Bot) send(ctx context.Context, u model.Update, text string, kb *model.Keyboard) {

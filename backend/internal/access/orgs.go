@@ -202,6 +202,13 @@ var ErrNoOrg = errors.New("the house has no management organization")
 // management-company view without a real organization. Only a demo house, and
 // the operation is idempotent.
 func (s *Store) ConfirmDemoStaff(ctx context.Context, userID, houseID string) (OrgSummary, error) {
+	allowed, err := s.configuredUK(ctx, userID)
+	if err != nil {
+		return OrgSummary{}, err
+	}
+	if !allowed {
+		return OrgSummary{}, ErrForbidden
+	}
 	house, err := s.registry.House(ctx, houseID)
 	if errors.Is(err, registry.ErrNotFound) {
 		return OrgSummary{}, ErrNotFound

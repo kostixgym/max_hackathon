@@ -40,6 +40,9 @@ type Config struct {
 	// DemoInviteSlug is the invite slug of the demo house. Empty value makes the
 	// seed generate a random one and print it to the log.
 	DemoInviteSlug string
+	// UKMaxUserIDs grants the demo management organization to these MAX accounts.
+	UKMaxUserIDs           []int64
+	UKMaxUserIDsConfigured bool
 
 	LogLevel string
 }
@@ -76,6 +79,21 @@ func Load() (Config, error) {
 			ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-'
 			if !ok {
 				return c, fmt.Errorf("DEMO_INVITE_SLUG contains invalid character %q; allowed: [A-Za-z0-9_-]", string(r))
+			}
+		}
+	}
+	rawUKIDs, ukConfigured := os.LookupEnv("UK_MAX_USER_IDS")
+	c.UKMaxUserIDsConfigured = ukConfigured
+	if raw := strings.TrimSpace(rawUKIDs); raw != "" {
+		seen := make(map[int64]bool)
+		for _, part := range strings.Split(raw, ",") {
+			id, parseErr := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if parseErr != nil || id <= 0 {
+				return c, fmt.Errorf("UK_MAX_USER_IDS: expected comma-separated positive MAX user ids")
+			}
+			if !seen[id] {
+				c.UKMaxUserIDs = append(c.UKMaxUserIDs, id)
+				seen[id] = true
 			}
 		}
 	}

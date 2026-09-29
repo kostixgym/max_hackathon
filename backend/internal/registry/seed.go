@@ -65,16 +65,24 @@ func (s *Store) SeedDemo(ctx context.Context, hasher *security.Hasher, slug stri
 // SeedSampleHouses adds two searchable Saint Petersburg houses used by the local demo.
 // They intentionally have no personal registry records and can be replaced by a real upload.
 func (s *Store) SeedSampleHouses(ctx context.Context, hasher *security.Hasher) error {
+	var demoOrgID *string
+	var orgID string
+	if err := s.pool.QueryRow(ctx, `SELECT org_id::text FROM houses WHERE is_demo`).Scan(&orgID); err == nil {
+		demoOrgID = &orgID
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("sample houses demo organization: %w", err)
+	}
 	for _, h := range []struct{ slug, address, street, number string }{
 		{"spb-petrogradskaya-12", "г. Санкт-Петербург, ул. Петропавловская, д. 12", "Петропавловская", "12"},
 		{"spb-morskaya-7", "г. Санкт-Петербург, Большая Морская ул., д. 7", "Большая Морская", "7"},
 	} {
 		var houseID string
 		if err := s.pool.QueryRow(ctx, `
-			INSERT INTO houses (address, region, locality, street, house_number, timezone, invite_slug, is_demo)
-			VALUES ($1, 'г. Санкт-Петербург', 'Санкт-Петербург', $2, $3, 'Europe/Moscow', $4, false)
-			ON CONFLICT (invite_slug) DO UPDATE SET address = EXCLUDED.address
-			RETURNING id::text`, h.address, h.street, h.number, h.slug).Scan(&houseID); err != nil {
+			INSERT INTO houses (address, region, locality, street, house_number, timezone, invite_slug, is_demo, org_id)
+			VALUES ($1, 'г. Санкт-Петербург', 'Санкт-Петербург', $2, $3, 'Europe/Moscow', $4, false, $5::uuid)
+			ON CONFLICT (invite_slug) DO UPDATE SET address = EXCLUDED.address,
+				org_id = COALESCE(houses.org_id, EXCLUDED.org_id)
+			RETURNING id::text`, h.address, h.street, h.number, h.slug, demoOrgID).Scan(&houseID); err != nil {
 			return fmt.Errorf("seed sample house %s: %w", h.slug, err)
 		}
 		var count int

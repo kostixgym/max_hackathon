@@ -199,13 +199,13 @@ export function HomeGuest() {
   const me = meState.data;
 
   const linkedSlug = searchParams.get('house') ?? me?.house?.slug ?? getStartParam();
-  const guestMembership = me?.memberships.find((m) => (m.role === 'guest' || m.role === 'resident') && (!linkedSlug || m.house.slug === linkedSlug))
-    ?? me?.memberships.find((m) => m.role === 'guest' || m.role === 'resident');
+  const guestMembership = me?.memberships.find((m) => (!linkedSlug || m.house.slug === linkedSlug) && !(m.role === 'owner' && m.status === 'verified'));
   const house = guestMembership?.house;
   const premise = guestMembership?.premise;
   const houseId = house?.id;
+  const canViewInitiatives = guestMembership?.status === 'verified';
 
-  const initiativesState = useApi(() => (houseId ? fetchInitiatives(houseId) : Promise.resolve({ initiatives: [] })), [houseId]);
+  const initiativesState = useApi(() => (houseId && canViewInitiatives ? fetchInitiatives(houseId) : Promise.resolve({ initiatives: [] })), [houseId, canViewInitiatives]);
 
   if (meState.loading || initiativesState.loading) {
     return (
@@ -233,6 +233,8 @@ export function HomeGuest() {
 
   const initiatives = initiativesState.data?.initiatives || [];
   const displayArea = premise.display_area_m2 ? parseM2(premise.display_area_m2) : null;
+  const awaitingReview = guestMembership.status === 'pending' && guestMembership.role === 'owner';
+  const rejected = guestMembership.status === 'rejected';
 
   return (
     <Screen>
@@ -247,12 +249,18 @@ export function HomeGuest() {
                 {displayArea && ` · ${fmtNum(displayArea)} м²`}
               </MaxTypography.Headline>
               <div className="row">
-                <Status kind="none">{guestMembership?.role === 'resident' ? 'Житель' : 'Гость'}</Status>
+                <Status kind={awaitingReview ? 'paper' : rejected ? 'bad' : 'none'}>
+                  {awaitingReview ? 'Ожидает проверки УК' : rejected ? 'Заявка отклонена' : guestMembership.role === 'resident' ? 'Житель' : 'Гость'}
+                </Status>
               </div>
             </div>
           </div>
           <Note kind="info" icon="lock" style={{ padding: '12px 14px' }}>
-            Подтвердите, что вы собственник, — и сможете голосовать и видеть, как идут инициативы.
+            {awaitingReview
+              ? 'Заявка отправлена в УК. После подтверждения вы сможете голосовать и видеть инициативы дома.'
+              : rejected
+                ? `УК отклонила заявку${guestMembership.rejection_reason ? `: ${guestMembership.rejection_reason}` : ''}. Для уточнения причины обратитесь в УК.`
+                : 'Подтвердите, что вы собственник, — и сможете голосовать и видеть, как идут инициативы.'}
           </Note>
         </Card>
 
@@ -272,7 +280,7 @@ export function HomeGuest() {
         </MaxTypography.Text>
       </Main>
       <Foot>
-        <Btn to={P.confirm}>Подтвердить квартиру</Btn>
+        {awaitingReview || rejected ? <Btn to="/">К моим домам</Btn> : <Btn to="/attach">Подтвердить квартиру</Btn>}
       </Foot>
     </Screen>
   );

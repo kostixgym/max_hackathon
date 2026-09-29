@@ -5,6 +5,7 @@ import { ThemeContext } from './components/ui';
 import { Catalog } from './pages/Catalog';
 import { P } from './paths';
 import { applicationRoutes, groups } from './routes';
+import { AppLayout } from './components/AppLayout';
 
 type Theme = 'light' | 'dark';
 
@@ -42,6 +43,7 @@ export function App() {
       <ThemeContext.Provider value={{ theme, changeTheme }}>
       {/* HashRouter: мини-приложение открывается по одному URL из MAX, сервер не знает о путях */}
       <HashRouter>
+        <AppLayout>
         <Routes>
           <Route path="/__screens" element={<Catalog />} />
           {applicationRoutes.map(({ path, Component }) => <Route key={path} path={path} element={<Component />} />)}
@@ -51,6 +53,7 @@ export function App() {
           ))}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </AppLayout>
       </HashRouter>
       </ThemeContext.Provider>
       </MaxUI>

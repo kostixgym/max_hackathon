@@ -109,6 +109,48 @@ body.dark {
   flex: 1 0 auto;
   overflow: visible;
 }
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 480px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--bg);
+}
+.app-shell > .scr {
+  flex: 1;
+  min-height: 0;
+}
+.app-navigation {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.app-navigation .seg {
+  flex: 1;
+  min-width: 0;
+}
+.app-navigation .app-menu-button {
+  flex-shrink: 0;
+  align-self: center;
+  padding-inline: 8px;
+}
+.app-navigation .max-segment {
+  min-width: 0;
+  padding-inline: 8px;
+}
+.app-menu-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .ui-kit-theme-control {
   display: flex;
   flex-direction: column;

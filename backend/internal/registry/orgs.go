@@ -43,6 +43,15 @@ func (s *Store) OrgsByIDs(ctx context.Context, ids []string) ([]Org, error) {
 	return orgs, nil
 }
 
+// DemoOrgID returns the management organization of the seeded demo house.
+func (s *Store) DemoOrgID(ctx context.Context) (string, error) {
+	var id string
+	if err := s.pool.QueryRow(ctx, `SELECT org_id::text FROM houses WHERE is_demo`).Scan(&id); err != nil {
+		return "", fmt.Errorf("demo organization: %w", err)
+	}
+	return id, nil
+}
+
 // HousesByOrg returns the houses of the management organization, for the staff
 // cabinet (/orgs/{orgID}/houses).
 func (s *Store) HousesByOrg(ctx context.Context, orgID string) ([]HouseRef, error) {

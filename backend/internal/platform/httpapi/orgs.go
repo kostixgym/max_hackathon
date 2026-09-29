@@ -216,6 +216,8 @@ func (h *handlers) demoStaff(c *gin.Context) {
 
 	org, err := h.orgs.ConfirmDemoStaff(c.Request.Context(), id.UserID, house.ID)
 	switch {
+	case errors.Is(err, access.ErrForbidden):
+		writeError(c, http.StatusForbidden, "not_staff", "Ваш MAX ID не добавлен в список сотрудников УК")
 	case errors.Is(err, access.ErrNotDemo):
 		writeError(c, http.StatusForbidden, "not_demo", "Быстрый вход возможен только в демо-доме")
 	case errors.Is(err, access.ErrNotFound):

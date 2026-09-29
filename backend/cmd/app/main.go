@@ -113,6 +113,15 @@ func run() error {
 			return err
 		}
 	}
+	if cfg.UKMaxUserIDsConfigured {
+		orgID, err := houses.DemoOrgID(ctx)
+		if err != nil {
+			return err
+		}
+		if err := users.ConfigureUK(ctx, orgID, cfg.UKMaxUserIDs, true); err != nil {
+			return err
+		}
+	}
 
 	handler := httpapi.NewHandler(httpapi.Deps{
 		Auth: &httpapi.Authenticator{
@@ -123,11 +132,12 @@ func run() error {
 			Log:      log,
 			Now:      time.Now,
 		},
-		Houses:   houses,
-		Profiles: users,
-		DB:       pool,
-		Log:      log,
-		DevMode:  cfg.DevMode,
+		Houses:          houses,
+		Profiles:        users,
+		DB:              pool,
+		Log:             log,
+		DevMode:         cfg.DevMode,
+		UKIDsConfigured: cfg.UKMaxUserIDsConfigured,
 
 		Access:           users,
 		Templates:        catalog,
@@ -165,6 +175,7 @@ func run() error {
 				accounts:         users,
 				notifier:         notifier,
 				devMode:          cfg.DevMode,
+				ukIDs:            cfg.UKMaxUserIDs,
 				demandsAnnounce:  demands,
 				staff:            users,
 				meetingsView:     meetings,
@@ -224,6 +235,7 @@ type botDeps struct {
 	accounts         bot.Accounts
 	notifier         botNotifier
 	devMode          bool
+	ukIDs            []int64
 
 	// К3: уведомления о требовании и собрании.
 	demandsAnnounce bot.DemandAnnouncer
@@ -357,6 +369,7 @@ func runBot(ctx context.Context, token string, deps botDeps, log *slog.Logger, o
 			Members:          deps.members,
 			InitiativeReader: deps.initiativeReader,
 			DevMode:          deps.devMode,
+			UKIDs:            deps.ukIDs,
 		},
 		Log:     log,
 		BotID:   me.UserID,

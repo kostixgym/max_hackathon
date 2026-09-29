@@ -55,12 +55,13 @@ type PathSelector interface {
 
 // Deps are the dependencies of the API.
 type Deps struct {
-	Auth     *Authenticator
-	Houses   Houses
-	Profiles Profiles
-	DB       Readiness
-	Log      *slog.Logger
-	DevMode  bool
+	Auth            *Authenticator
+	Houses          Houses
+	Profiles        Profiles
+	DB              Readiness
+	Log             *slog.Logger
+	DevMode         bool
+	UKIDsConfigured bool
 
 	// Stage 1: templates, initiatives and the support poll.
 	Access           AccessChecks
@@ -93,7 +94,7 @@ const maxBodyBytes = 64 << 10
 // NewHandler builds the router of the API.
 func NewHandler(d Deps) http.Handler {
 	h := &handlers{
-		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode,
+		houses: d.Houses, profiles: d.Profiles, db: d.DB, log: d.Log, devMode: d.DevMode, ukIDsConfigured: d.UKIDsConfigured,
 		access: d.Access, templates: d.Templates, initiatives: d.Initiatives,
 		initiativeReader: d.InitiativeReader, pathSelector: d.PathSelector, pollStarter: d.PollStarter,
 		pollProgress: d.PollProgress, votes: d.Votes, demoMembers: d.DemoMembers, guestAttacher: d.GuestAttacher, phoneVerifier: d.PhoneVerifier,
@@ -190,11 +191,12 @@ func limitBody(n int64) gin.HandlerFunc {
 }
 
 type handlers struct {
-	houses   Houses
-	profiles Profiles
-	db       Readiness
-	log      *slog.Logger
-	devMode  bool
+	houses          Houses
+	profiles        Profiles
+	db              Readiness
+	log             *slog.Logger
+	devMode         bool
+	ukIDsConfigured bool
 
 	// Stage 1.
 	access           AccessChecks
@@ -241,11 +243,12 @@ func (h *handlers) readyz(c *gin.Context) {
 }
 
 type meResponse struct {
-	User        meUser           `json:"user"`
-	DevMode     bool             `json:"dev_mode"`
-	House       *houseJSON       `json:"house"`
-	Memberships []membershipJSON `json:"memberships"`
-	Orgs        []orgJSON        `json:"orgs"`
+	User            meUser           `json:"user"`
+	DevMode         bool             `json:"dev_mode"`
+	UKIDsConfigured bool             `json:"uk_ids_configured"`
+	House           *houseJSON       `json:"house"`
+	Memberships     []membershipJSON `json:"memberships"`
+	Orgs            []orgJSON        `json:"orgs"`
 }
 
 type meUser struct {
@@ -265,10 +268,11 @@ func (h *handlers) me(c *gin.Context) {
 		return
 	}
 	resp := meResponse{
-		User:        meUser{ID: id.UserID, FirstName: id.FirstName},
-		DevMode:     h.devMode,
-		Memberships: make([]membershipJSON, 0),
-		Orgs:        make([]orgJSON, 0),
+		User:            meUser{ID: id.UserID, FirstName: id.FirstName},
+		DevMode:         h.devMode,
+		UKIDsConfigured: h.ukIDsConfigured,
+		Memberships:     make([]membershipJSON, 0),
+		Orgs:            make([]orgJSON, 0),
 	}
 
 	memberships, err := h.profiles.MembershipsByUser(c.Request.Context(), id.UserID)
