@@ -7,6 +7,7 @@ export function AdminPanel() {
   const orgsState = useApi(() => fetchAdminOrgs());
   const [query, setQuery] = useState('');
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [searchCompleted, setSearchCompleted] = useState(false);
   const [maxUserId, setMaxUserId] = useState<string | null>(null);
   const [orgId, setOrgId] = useState('');
   const [role, setRole] = useState<'operator' | 'admin'>('operator');
@@ -15,9 +16,14 @@ export function AdminPanel() {
   const [error, setError] = useState('');
 
   const findUsers = async () => {
-    setError(''); setMessage(''); setMaxUserId(null);
-    try { setUsers((await searchAdminUsers(query)).users); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Не удалось найти пользователя'); }
+    const searchQuery = query.trim();
+    setError(''); setMessage(''); setUsers([]); setMaxUserId(null); setSearchCompleted(false);
+    try {
+      const result = await searchAdminUsers(searchQuery);
+      if (query.trim() === searchQuery) { setUsers(result.users); setSearchCompleted(true); }
+    } catch (cause) {
+      if (query.trim() === searchQuery) setError(cause instanceof Error ? cause.message : 'Не удалось найти пользователя');
+    }
   };
   const changeRole = async (action: 'grant' | 'revoke') => {
     if (maxUserId === null || !orgId || busy) return;
@@ -33,11 +39,11 @@ export function AdminPanel() {
     {orgsState.error && <Note kind="neg">Недостаточно прав или не удалось загрузить организации.</Note>}
     {error && <Note kind="neg">{error}</Note>}{message && <Note kind="info">{message}</Note>}
     <div style={{ display: 'grid', gap: 10 }}>
-      <label>MAX ID пользователя<input inputMode="numeric" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Например, 123456789" minLength={2} style={fieldStyle} /></label>
+      <label>MAX ID пользователя<input inputMode="numeric" value={query} onChange={(e) => { setQuery(e.target.value); setUsers([]); setMaxUserId(null); setSearchCompleted(false); setError(''); setMessage(''); }} placeholder="Например, 123456789" minLength={2} style={fieldStyle} /></label>
       <Btn onClick={() => void findUsers()} disabled={busy || query.trim().length < 2}>Найти пользователя</Btn>
     </div>
     {users.length > 0 && <Card className="card" style={{ gap: 8 }}><b>Найденные аккаунты</b>{users.map((user) => <button key={user.max_user_id} type="button" onClick={() => setMaxUserId(user.max_user_id)} style={{ ...choiceStyle, fontWeight: maxUserId === user.max_user_id ? 700 : 400 }}>{user.max_user_id}{maxUserId === user.max_user_id ? ' · выбран' : ''}</button>)}</Card>}
-    {users.length === 0 && query.length >= 2 && !error && <Note kind="info">Пользователи не найдены. Аккаунт появится здесь после первого входа в приложение.</Note>}
+    {searchCompleted && users.length === 0 && <Note kind="info">Пользователи не найдены. Аккаунт появится здесь после первого входа в приложение.</Note>}
     {maxUserId !== null && <Card className="card" style={{ gap: 12 }}>
       <b>Доступ для MAX ID {maxUserId}</b>
       <label>Организация<select value={orgId} onChange={(e) => setOrgId(e.target.value)} style={fieldStyle}><option value="">Выберите организацию</option>{orgs.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select></label>
