@@ -24,7 +24,7 @@ export function MeetingCreatePage() {
   const housesState = useApi(async () => (await Promise.all((orgIds ? orgIds.split(',') : []).map(fetchOrgHouses))).flatMap((item) => item.houses), [orgIds]);
   const house = housesState.data?.find((item) => item.id === initiativeState.data?.house_id)
     ?? meState.data?.memberships.find((item) => item.house.id === initiativeState.data?.house_id)?.house;
-  const candidatesState = useApi(() => house ? fetchMeetingOfficerCandidates(house.slug) : Promise.resolve({ owners: [] }), [house?.slug]);
+  const candidatesState = useApi(() => house ? fetchMeetingOfficerCandidates(house.id) : Promise.resolve({ owners: [] }), [house?.id]);
 
   const [form, setForm] = useState<CreateMeetingInput['form']>('paper_absentee');
   const [notice, setNotice] = useState(dateTimeValue(0));

@@ -281,8 +281,8 @@ export async function fetchPremiseOwners(premiseId: string): Promise<OwnersRespo
  * GET /api/v1/houses/:house/meeting-officer-candidates
  * Returns verified owners eligible to be meeting officers (chairman/secretary).
  */
-export async function fetchMeetingOfficerCandidates(houseSlug: string): Promise<OwnersResponse> {
-  return request<OwnersResponse>(`/houses/${encodeURIComponent(houseSlug)}/meeting-officer-candidates`);
+export async function fetchMeetingOfficerCandidates(houseId: string): Promise<OwnersResponse> {
+  return request<OwnersResponse>(`/houses/${encodeURIComponent(houseId)}/meeting-officer-candidates`);
 }
 
 /**
